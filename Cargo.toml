@@ -1,0 +1,19 @@
+[package]
+name = "vlt"
+version = "0.1.0"
+edition = "2021"
+description = "Lightweight secret manager for AI developers"
+license = "MIT"
+repository = "https://github.com/Bayfront-Software/vlt"
+
+[dependencies]
+clap = { version = "4", features = ["derive"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+aes-gcm = "0.10"
+argon2 = "0.5"
+rand = "0.8"
+rusqlite = { version = "0.31", features = ["bundled"] }
+security-framework = "2"
+dirs = "5"
+tabled = "0.15"
