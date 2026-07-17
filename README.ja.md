@@ -86,6 +86,36 @@ vlt run -- python train.py
 eval "$(vlt env)"
 ```
 
+## バイナリシークレットと持ち出しバックアップ
+
+署名鍵や証明書などのファイルをそのまま保存できます:
+
+```bash
+# ファイルを保存
+vlt set android/upload-keystore --file ~/keystores/upload.jks
+
+# 復元（バイナリは --out 必須）
+vlt get android/upload-keystore --out ./upload.jks
+```
+
+マスターキーは OS Keychain から出ないため、`vault.db` の
+コピー単体ではバックアップになりません。マシン非依存のバックアップは
+パスフレーズ暗号化された `.vltx` を使います:
+
+```bash
+# 全件エクスポート（パスフレーズ入力を求める。argon2id + AES-256-GCM）
+vlt export backup.vltx
+
+# 任意のマシンで復元（既存キーはスキップ。--overwrite で上書き）
+vlt import backup.vltx --overwrite
+```
+
+スクリプトからは `VLT_PASSPHRASE` で非対話にでき、`VLT_DB` で
+vault の保存先を差し替えられます（復元検証用の一時 vault に便利）。
+
+`vlt init` は既存マスターキーがあると失敗します（再初期化すると現在の
+vault が復号不能になるため）。`vlt export` 後に `--force` でのみ実行可能。
+
 ## 仕組み
 
 ```

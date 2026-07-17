@@ -1,6 +1,6 @@
 [package]
 name = "vlt"
-version = "0.1.0"
+version = "0.2.0"
 edition = "2021"
 description = "Lightweight secret manager for AI developers"
 license = "MIT"
@@ -17,3 +17,5 @@ rusqlite = { version = "0.31", features = ["bundled"] }
 security-framework = "2"
 dirs = "5"
 tabled = "0.15"
+base64 = "0.22"
+rpassword = "7"

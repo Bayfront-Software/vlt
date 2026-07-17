@@ -88,6 +88,38 @@ Or export all resolved secrets into your current shell:
 eval "$(vlt env)"
 ```
 
+## Binary secrets & portable backup
+
+Store whole files (signing keys, certificates) as binary secrets:
+
+```bash
+# Store a file
+vlt set android/upload-keystore --file ~/keystores/upload.jks
+
+# Restore it (binary secrets require --out)
+vlt get android/upload-keystore --out ./upload.jks
+```
+
+The vault's master key never leaves the OS Keychain, so a copy of
+`vault.db` alone is **not** a backup. To make a machine-independent
+backup, export a passphrase-encrypted `.vltx` bundle:
+
+```bash
+# Export everything (prompts for a passphrase; argon2id + AES-256-GCM)
+vlt export backup.vltx
+
+# Restore on any machine (existing keys are skipped unless --overwrite)
+vlt import backup.vltx --overwrite
+```
+
+`VLT_PASSPHRASE` supplies the passphrase non-interactively for scripts,
+and `VLT_DB` overrides the vault path (useful to verify a restore into a
+scratch vault before trusting a backup).
+
+`vlt init` refuses to overwrite an existing master key — re-initializing
+would make the current vault permanently unreadable. Use `vlt init --force`
+only after exporting.
+
 ## How It Works
 
 ```

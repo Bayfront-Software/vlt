@@ -1,10 +1,12 @@
 mod crypto;
 mod keychain;
+mod portable;
 mod resolve;
 mod store;
 
 use clap::{Parser, Subcommand};
 use std::os::unix::process::CommandExt;
+use std::path::PathBuf;
 use std::process::Command;
 use store::SecretStore;
 
@@ -18,20 +20,30 @@ struct Cli {
 #[derive(Subcommand)]
 enum Commands {
     /// Initialize vault and store master key in OS Keychain
-    Init,
+    Init {
+        /// Replace an existing master key (DANGER: existing vault becomes unreadable)
+        #[arg(long)]
+        force: bool,
+    },
 
     /// Store a secret
     Set {
         /// Secret key (e.g. openai/api-key)
         key: String,
-        /// Secret value (omit to read from stdin)
+        /// Secret value (omit to read from stdin, or use --file)
         value: Option<String>,
+        /// Read the value from a file (stored as binary)
+        #[arg(long, conflicts_with = "value")]
+        file: Option<PathBuf>,
     },
 
     /// Retrieve a secret
     Get {
         /// Secret key
         key: String,
+        /// Write the value to a file (required to restore binary secrets)
+        #[arg(long)]
+        out: Option<PathBuf>,
     },
 
     /// Delete a secret
@@ -54,6 +66,21 @@ enum Commands {
 
     /// Output shell export statements for resolved secrets
     Env,
+
+    /// Export all secrets to a passphrase-encrypted portable backup (.vltx)
+    Export {
+        /// Output file path (e.g. backup.vltx)
+        output: PathBuf,
+    },
+
+    /// Import secrets from a .vltx backup into this vault
+    Import {
+        /// Backup file path
+        input: PathBuf,
+        /// Overwrite keys that already exist in this vault
+        #[arg(long)]
+        overwrite: bool,
+    },
 }
 
 fn load_store() -> SecretStore {
@@ -71,11 +98,49 @@ fn load_store() -> SecretStore {
     })
 }
 
+/// パスフレーズを取得する。非対話環境(スクリプト)では VLT_PASSPHRASE を使う。
+fn read_passphrase(confirm: bool) -> String {
+    if let Ok(p) = std::env::var("VLT_PASSPHRASE") {
+        if !p.is_empty() {
+            return p;
+        }
+    }
+    let first = rpassword::prompt_password("Passphrase: ").unwrap_or_else(|e| {
+        eprintln!("Error reading passphrase: {e}");
+        std::process::exit(1);
+    });
+    if first.is_empty() {
+        eprintln!("Error: passphrase must not be empty");
+        std::process::exit(1);
+    }
+    if confirm {
+        let second = rpassword::prompt_password("Confirm passphrase: ").unwrap_or_else(|e| {
+            eprintln!("Error reading passphrase: {e}");
+            std::process::exit(1);
+        });
+        if first != second {
+            eprintln!("Error: passphrases do not match");
+            std::process::exit(1);
+        }
+    }
+    first
+}
+
 fn main() {
     let cli = Cli::parse();
 
     match cli.command {
-        Commands::Init => {
+        Commands::Init { force } => {
+            // 既存のマスターキーを黙って上書きすると、いまの vault が
+            // 復号不能になる（実質データ全損）。明示的な --force を要求する。
+            if keychain::load_master_key().is_ok() && !force {
+                eprintln!(
+                    "Error: A master key already exists in the OS Keychain.\n\
+                     Re-initializing would make the current vault permanently unreadable.\n\
+                     If you really want a fresh vault, run `vlt export` first, then `vlt init --force`."
+                );
+                std::process::exit(1);
+            }
             let master_key = crypto::generate_master_key();
             keychain::store_master_key(&master_key).unwrap_or_else(|e| {
                 eprintln!("Error: {e}");
@@ -89,8 +154,20 @@ fn main() {
             println!("Vault initialized. Master key stored in OS Keychain.");
         }
 
-        Commands::Set { key, value } => {
+        Commands::Set { key, value, file } => {
             let store = load_store();
+            if let Some(path) = file {
+                let bytes = std::fs::read(&path).unwrap_or_else(|e| {
+                    eprintln!("Error reading {}: {e}", path.display());
+                    std::process::exit(1);
+                });
+                store.set_bytes(&key, &bytes, true).unwrap_or_else(|e| {
+                    eprintln!("Error: {e}");
+                    std::process::exit(1);
+                });
+                println!("Secret stored (binary, {} bytes): {key}", bytes.len());
+                return;
+            }
             let secret_value = match value {
                 Some(v) => v,
                 None => {
@@ -108,13 +185,34 @@ fn main() {
             println!("Secret stored: {key}");
         }
 
-        Commands::Get { key } => {
+        Commands::Get { key, out } => {
             let store = load_store();
-            let value = store.get(&key).unwrap_or_else(|e| {
+            let (bytes, binary) = store.get_bytes(&key).unwrap_or_else(|e| {
                 eprintln!("Error: {e}");
                 std::process::exit(1);
             });
-            print!("{value}");
+            match out {
+                Some(path) => {
+                    std::fs::write(&path, &bytes).unwrap_or_else(|e| {
+                        eprintln!("Error writing {}: {e}", path.display());
+                        std::process::exit(1);
+                    });
+                    println!("Wrote {} bytes to {}", bytes.len(), path.display());
+                }
+                None => {
+                    if binary {
+                        eprintln!(
+                            "Error: {key} is a binary secret. Use `vlt get {key} --out <path>`."
+                        );
+                        std::process::exit(1);
+                    }
+                    let value = String::from_utf8(bytes).unwrap_or_else(|e| {
+                        eprintln!("Error: UTF-8 decode error: {e}");
+                        std::process::exit(1);
+                    });
+                    print!("{value}");
+                }
+            }
         }
 
         Commands::Delete { key } => {
@@ -143,10 +241,11 @@ fn main() {
                 return;
             }
 
-            println!("{:<30} {:<20} {:<20}", "KEY", "CREATED", "UPDATED");
-            println!("{}", "-".repeat(70));
-            for (key, created, updated) in secrets {
-                println!("{:<30} {:<20} {:<20}", key, created, updated);
+            println!("{:<38} {:<6} {:<20} {:<20}", "KEY", "TYPE", "CREATED", "UPDATED");
+            println!("{}", "-".repeat(86));
+            for (key, created, updated, binary) in secrets {
+                let kind = if binary { "bin" } else { "text" };
+                println!("{:<38} {:<6} {:<20} {:<20}", key, kind, created, updated);
             }
         }
 
@@ -184,6 +283,53 @@ fn main() {
                 let escaped = value.replace('\'', "'\\''");
                 println!("export {name}='{escaped}'");
             }
+        }
+
+        Commands::Export { output } => {
+            let store = load_store();
+            let entries = store.export_entries().unwrap_or_else(|e| {
+                eprintln!("Error: {e}");
+                std::process::exit(1);
+            });
+            if entries.is_empty() {
+                eprintln!("Error: vault is empty, nothing to export");
+                std::process::exit(1);
+            }
+            let passphrase = read_passphrase(true);
+            let sealed = portable::seal(&entries, &passphrase).unwrap_or_else(|e| {
+                eprintln!("Error: {e}");
+                std::process::exit(1);
+            });
+            std::fs::write(&output, &sealed).unwrap_or_else(|e| {
+                eprintln!("Error writing {}: {e}", output.display());
+                std::process::exit(1);
+            });
+            println!(
+                "Exported {} secrets to {} ({} bytes, argon2id + AES-256-GCM)",
+                entries.len(),
+                output.display(),
+                sealed.len()
+            );
+        }
+
+        Commands::Import { input, overwrite } => {
+            let store = load_store();
+            let data = std::fs::read(&input).unwrap_or_else(|e| {
+                eprintln!("Error reading {}: {e}", input.display());
+                std::process::exit(1);
+            });
+            let passphrase = read_passphrase(false);
+            let entries = portable::unseal(&data, &passphrase).unwrap_or_else(|e| {
+                eprintln!("Error: {e}");
+                std::process::exit(1);
+            });
+            let (imported, skipped) = store
+                .import_entries(&entries, overwrite)
+                .unwrap_or_else(|e| {
+                    eprintln!("Error: {e}");
+                    std::process::exit(1);
+                });
+            println!("Imported {imported} secrets ({skipped} skipped; use --overwrite to replace)");
         }
     }
 }

@@ -20,6 +20,8 @@ pub fn resolve_env(store: &SecretStore) -> Result<HashMap<String, String>, Strin
 }
 
 /// Resolve a single value if it's a vlt:// reference, otherwise return as-is.
+/// 単一値の解決。将来の `vlt resolve <value>` 用に残している公開API。
+#[allow(dead_code)]
 pub fn resolve_value(store: &SecretStore, value: &str) -> Result<String, String> {
     if let Some(secret_key) = value.strip_prefix(PREFIX) {
         store.get(secret_key)
