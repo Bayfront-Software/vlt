@@ -157,3 +157,19 @@ MIT
 ## Contributing
 
 Contributions are welcome. Please open an issue first to discuss what you'd like to change.
+
+## Desktop app (GUI)
+
+A Tauri 2 desktop app lives in `gui/`, built on the same Rust core. It gives a 1Password-style
+two-pane UI: searchable list grouped by namespace, reveal/copy with auto-conceal (30 s),
+clipboard auto-clear (30 s), new/edit/rename/delete, binary secrets via file dialogs,
+and `.vltx` export/import with a passphrase. Lock (⌘L) drops the vault from memory; unlock
+asks the macOS Keychain for the master key.
+
+```bash
+cd gui
+npm install
+npm run dev      # develop
+npm run verify   # unit + Playwright E2E + cargo test/build
+npm run build    # gui/src-tauri/target/release/bundle/macos/vlt.app (+ .dmg)
+```

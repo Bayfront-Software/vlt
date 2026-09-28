@@ -153,3 +153,19 @@ MIT
 ## コントリビュート
 
 コントリビュート歓迎です。変更を加える前に、まずissueを開いて議論してください。
+
+## デスクトップアプリ（GUI）
+
+`gui/` に Tauri 2 製のデスクトップアプリがあります（Rust コアは CLI と共通）。
+1Password 風の 2 ペイン UI で、名前空間ごとにまとまった検索つき一覧、表示/コピー
+（30 秒で自動的に隠す・クリップボードも 30 秒で自動消去）、新規/編集/改名/削除、
+バイナリのファイル保存/取り込み、パスフレーズ付き `.vltx` の書き出し/読み込みができます。
+ロック（⌘L）はメモリ上の vault を捨て、解錠時に macOS キーチェーンへマスターキーを取りに行きます。
+
+```bash
+cd gui
+npm install
+npm run dev      # 開発
+npm run verify   # 単体 + Playwright E2E + cargo test/build
+npm run build    # gui/src-tauri/target/release/bundle/macos/vlt.app（+ .dmg）
+```

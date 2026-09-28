@@ -1,0 +1,308 @@
+/* 1Password 8 に寄せた 2 ペイン構成。色はトークンで持ち、ライト/ダーク両対応。 */
+:root {
+  --bg: #f2f2f4;
+  --sidebar: #e9e9ec;
+  --surface: #ffffff;
+  --surface-2: #f6f6f8;
+  --line: #d9d9de;
+  --ink: #1d1d22;
+  --ink-2: #5d5d66;
+  --ink-3: #8b8b95;
+  --accent: #2f5fd6;
+  --accent-ink: #ffffff;
+  --accent-soft: #e4ebfb;
+  --danger: #c93b3b;
+  --danger-soft: #fbe6e6;
+  --selected: #d6dff5;
+  --shadow: 0 10px 30px rgba(20, 20, 30, 0.18);
+  --radius: 10px;
+  --titlebar: 34px;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #1e1e22;
+    --sidebar: #26262b;
+    --surface: #2c2c32;
+    --surface-2: #34343b;
+    --line: #3d3d45;
+    --ink: #ececf0;
+    --ink-2: #b1b1bb;
+    --ink-3: #7d7d88;
+    --accent: #6d8fe8;
+    --accent-ink: #0f1526;
+    --accent-soft: #2c3652;
+    --danger: #ef6b6b;
+    --danger-soft: #3f2626;
+    --selected: #3a4870;
+    --shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
+  }
+}
+
+* { box-sizing: border-box; }
+html, body { height: 100%; margin: 0; }
+body {
+  font: 14px/1.45 -apple-system, BlinkMacSystemFont, "Helvetica Neue", "Hiragino Sans", sans-serif;
+  color: var(--ink);
+  background: var(--bg);
+  -webkit-user-select: none;
+  user-select: none;
+  overflow: hidden;
+}
+button { font: inherit; color: inherit; cursor: pointer; }
+kbd {
+  font: 11px/1 ui-monospace, Menlo, monospace;
+  color: var(--ink-3);
+  background: var(--surface-2);
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  padding: 2px 5px;
+}
+[hidden] { display: none !important; }
+.muted { color: var(--ink-2); }
+
+.screen { position: absolute; inset: 0; }
+
+/* ゲート画面（setup / locked） */
+.gate { display: grid; place-items: center; }
+.gate-card {
+  text-align: center;
+  max-width: 360px;
+  padding: 24px;
+}
+.gate-icon { width: 72px; height: 72px; margin: 0 auto 16px; color: var(--ink); }
+.gate-icon svg { width: 100%; height: 100%; }
+.gate h1 { font-size: 22px; margin: 0 0 8px; }
+.gate p { color: var(--ink-2); margin: 0 0 20px; }
+.gate-error { color: var(--danger); min-height: 1.4em; margin-top: 12px; }
+
+.primary {
+  background: var(--accent);
+  color: var(--accent-ink);
+  border: 0;
+  border-radius: 8px;
+  padding: 9px 18px;
+  font-weight: 600;
+}
+.primary:hover { filter: brightness(1.08); }
+.primary:active { filter: brightness(0.94); }
+.secondary {
+  background: var(--surface-2);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 9px 18px;
+}
+.link { background: none; border: 0; color: var(--accent); padding: 0; text-decoration: underline; }
+
+/* 本体 */
+.main { display: grid; grid-template-columns: 300px 1fr; }
+.sidebar {
+  background: var(--sidebar);
+  border-right: 1px solid var(--line);
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+.sidebar-top {
+  padding: var(--titlebar) 12px 8px;   /* 上は信号機ボタンの分を空ける */
+}
+.search {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+.search svg { position: absolute; left: 9px; width: 16px; height: 16px; color: var(--ink-3); pointer-events: none; }
+.search input {
+  width: 100%;
+  font: inherit;
+  color: var(--ink);
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 7px 44px 7px 30px;
+  outline: none;
+  -webkit-user-select: text; user-select: text;
+}
+.search input:focus { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
+.search kbd { position: absolute; right: 8px; }
+
+.list { flex: 1; overflow-y: auto; padding: 0 8px 8px; }
+.list-group { margin-top: 10px; }
+.list-group h4 {
+  margin: 0 0 2px;
+  padding: 0 8px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--ink-3);
+}
+.list-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  text-align: left;
+  background: none;
+  border: 0;
+  border-radius: 8px;
+  padding: 7px 8px;
+}
+.list-item:hover { background: rgba(127, 127, 140, 0.12); }
+.list-item.selected { background: var(--selected); }
+.list-item .badge, .item-badge {
+  flex: none;
+  width: 28px; height: 28px;
+  border-radius: 7px;
+  display: grid; place-items: center;
+  font: 600 11px/1 ui-monospace, Menlo, monospace;
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+.list-item .badge.bin, .item-badge.bin { background: var(--surface-2); color: var(--ink-2); border: 1px solid var(--line); }
+.list-item .name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.list-empty { padding: 24px 12px; color: var(--ink-3); text-align: center; }
+
+.sidebar-bottom {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  padding: 8px 12px 12px;
+  border-top: 1px solid var(--line);
+}
+.sidebar-bottom .primary { flex: 1; }
+.menu { position: relative; }
+.icon-button {
+  width: 34px; height: 34px;
+  display: grid; place-items: center;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  color: var(--ink-2);
+}
+.icon-button svg { width: 18px; height: 18px; fill: currentColor; }
+.icon-button:hover { color: var(--ink); background: var(--surface-2); }
+.icon-button.danger:hover { color: var(--danger); background: var(--danger-soft); border-color: transparent; }
+.menu-popup {
+  position: absolute;
+  right: 0; bottom: 40px;
+  min-width: 250px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  box-shadow: var(--shadow);
+  padding: 6px;
+  z-index: 5;
+}
+.menu-popup button {
+  display: flex; justify-content: space-between; align-items: center;
+  width: 100%; text-align: left;
+  background: none; border: 0; border-radius: 6px;
+  padding: 8px 10px;
+}
+.menu-popup button:hover { background: var(--accent-soft); }
+.menu-popup hr { border: 0; border-top: 1px solid var(--line); margin: 6px 0; }
+
+/* 詳細ペイン */
+.detail { display: flex; flex-direction: column; min-width: 0; overflow-y: auto; }
+.detail-top { height: var(--titlebar); flex: none; }
+.detail-empty { flex: 1; display: grid; place-items: center; color: var(--ink-3); }
+.detail-item { padding: 8px 36px 40px; max-width: 760px; }
+
+.item-header { display: flex; align-items: center; gap: 14px; margin-bottom: 22px; }
+.item-badge { width: 48px; height: 48px; border-radius: 12px; font-size: 15px; }
+.item-titles { flex: 1; min-width: 0; }
+.item-titles h2 { margin: 0; font-size: 22px; overflow-wrap: anywhere; -webkit-user-select: text; user-select: text; }
+.item-titles p { margin: 2px 0 0; font-size: 13px; }
+.item-actions { display: flex; gap: 6px; }
+
+.fields {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 4px 16px;
+  margin-bottom: 16px;
+}
+.field { padding: 12px 0; }
+.field + .field { border-top: 1px solid var(--line); }
+.field-label { font-size: 12px; color: var(--ink-3); margin-bottom: 6px; }
+.field-row { display: flex; align-items: center; gap: 12px; }
+.value-box {
+  flex: 1; min-width: 0;
+  font: 14px/1.5 ui-monospace, Menlo, monospace;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+  -webkit-user-select: text; user-select: text;
+}
+.value-box.masked { letter-spacing: 0.15em; color: var(--ink-2); }
+.value-box.binary { color: var(--ink-2); font-family: inherit; }
+.field-buttons { display: flex; gap: 6px; flex: none; }
+.field-buttons.wrap { flex-wrap: wrap; flex: 1; }
+.field-hint { margin: 8px 0 0; font-size: 12px; color: var(--ink-3); }
+.chip {
+  background: var(--surface-2);
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  padding: 5px 12px;
+  font-size: 13px;
+}
+.chip:hover { background: var(--accent-soft); border-color: transparent; color: var(--accent); }
+.chip.accent { background: var(--accent); color: var(--accent-ink); border-color: transparent; }
+.chip.accent:hover { filter: brightness(1.08); color: var(--accent-ink); }
+
+.meta { display: flex; gap: 32px; margin: 0; padding: 12px 0; border-top: 1px solid var(--line); }
+.meta div { display: flex; flex-direction: column; gap: 2px; }
+.meta dt { font-size: 12px; color: var(--ink-3); }
+.meta dd { margin: 0; font-size: 13px; }
+
+/* ダイアログ */
+.modal {
+  position: absolute; inset: 0;
+  background: rgba(10, 10, 16, 0.35);
+  display: grid; place-items: center;
+  z-index: 10;
+}
+.modal-card {
+  width: min(480px, calc(100% - 48px));
+  background: var(--surface);
+  border-radius: 14px;
+  box-shadow: var(--shadow);
+  padding: 20px 22px 18px;
+}
+.modal-card h3 { margin: 0 0 14px; font-size: 16px; }
+.modal-body label { display: block; font-size: 12px; color: var(--ink-2); margin: 10px 0 4px; }
+.modal-body input[type="text"], .modal-body input[type="password"], .modal-body textarea {
+  width: 100%;
+  font: inherit;
+  color: var(--ink);
+  background: var(--surface-2);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 8px 10px;
+  outline: none;
+  -webkit-user-select: text; user-select: text;
+}
+.modal-body textarea { font-family: ui-monospace, Menlo, monospace; min-height: 96px; resize: vertical; }
+.modal-body input:focus, .modal-body textarea:focus { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
+.modal-body .check { display: flex; align-items: center; gap: 8px; margin-top: 12px; color: var(--ink-2); font-size: 13px; }
+.modal-body .segmented { display: inline-flex; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; margin-top: 4px; }
+.modal-body .segmented button { background: var(--surface-2); border: 0; padding: 6px 14px; font-size: 13px; }
+.modal-body .segmented button.on { background: var(--accent); color: var(--accent-ink); }
+.modal-body .note { font-size: 12px; color: var(--ink-3); margin: 8px 0 0; }
+.modal-body .warn { color: var(--danger); }
+.modal-error { color: var(--danger); font-size: 13px; min-height: 1.3em; margin: 10px 0 4px; }
+.modal-buttons { display: flex; justify-content: flex-end; gap: 8px; margin-top: 6px; }
+.modal-buttons .primary.danger { background: var(--danger); color: #fff; }
+
+.toast {
+  position: absolute;
+  left: 50%; bottom: 22px;
+  transform: translateX(-50%);
+  background: var(--ink);
+  color: var(--bg);
+  padding: 9px 16px;
+  border-radius: 999px;
+  box-shadow: var(--shadow);
+  font-size: 13px;
+  z-index: 20;
+}
+.toast.error { background: var(--danger); color: #fff; }

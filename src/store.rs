@@ -14,7 +14,8 @@ pub struct SecretStore {
     master_key: [u8; 32],
 }
 
-fn db_path() -> PathBuf {
+/// 既定の vault.db の場所（VLT_DB があればそれ）。GUI の表示用にも使う。
+pub fn db_path() -> PathBuf {
     // テスト・移行作業用に VLT_DB で保存先を差し替えられる。
     if let Ok(p) = std::env::var("VLT_DB") {
         let path = PathBuf::from(p);

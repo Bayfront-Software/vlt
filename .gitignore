@@ -1,1 +1,5 @@
 /target
+gui/node_modules/
+gui/src-tauri/target/
+gui/src-tauri/gen/
+gui/e2e/shots/

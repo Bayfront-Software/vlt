@@ -1,0 +1,18 @@
+{
+  "name": "vlt-gui",
+  "private": true,
+  "version": "0.3.0",
+  "description": "vlt desktop app (Tauri 2)",
+  "scripts": {
+    "dev": "tauri dev",
+    "build": "tauri build",
+    "check": "tauri build --no-bundle",
+    "test": "node --test ui/*.test.mjs && cd src-tauri && cargo test",
+    "verify": "npm test && npm run e2e && cd src-tauri && cargo build --release",
+    "e2e": "node e2e/walk.mjs"
+  },
+  "devDependencies": {
+    "@tauri-apps/cli": "^2.11.4",
+    "playwright": "^1.61.1"
+  }
+}

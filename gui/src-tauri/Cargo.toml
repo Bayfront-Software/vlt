@@ -1,0 +1,22 @@
+[package]
+name = "vlt-gui"
+version = "0.3.0"
+edition = "2021"
+description = "vlt desktop app"
+license = "MIT"
+repository = "https://github.com/Bayfront-Software/vlt"
+
+[lib]
+name = "vlt_gui_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+vlt = { path = "../.." }
+tauri = { version = "2", features = [] }
+tauri-plugin-dialog = "2"
+tauri-plugin-clipboard-manager = "2"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
