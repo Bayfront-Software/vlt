@@ -13,8 +13,8 @@ pub fn load_master_key() -> Result<Vec<u8>, String> {
     get_generic_password(SERVICE, ACCOUNT).map_err(|e| format!("Failed to load master key from Keychain: {e}. Run `vlt init` first."))
 }
 
-/// 将来の `vlt destroy` 用に残している公開API。
-#[allow(dead_code)]
+/// マスターキーの削除。CLI では未使用（GUI の将来機能・テスト向け）。
+
 pub fn delete_master_key() -> Result<(), String> {
     delete_generic_password(SERVICE, ACCOUNT).map_err(|e| format!("Failed to delete master key from Keychain: {e}"))
 }

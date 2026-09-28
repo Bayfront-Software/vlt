@@ -1,14 +1,10 @@
-mod crypto;
-mod keychain;
-mod portable;
-mod resolve;
-mod store;
 
 use clap::{Parser, Subcommand};
 use std::os::unix::process::CommandExt;
 use std::path::PathBuf;
 use std::process::Command;
-use store::SecretStore;
+use vlt::store::SecretStore;
+use vlt::{crypto, keychain, portable, resolve};
 
 #[derive(Parser)]
 #[command(name = "vlt", version, about = "Lightweight secret manager for AI developers")]
