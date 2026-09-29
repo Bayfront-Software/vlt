@@ -5,6 +5,10 @@ edition = "2021"
 description = "Lightweight secret manager for AI developers"
 license = "MIT"
 repository = "https://github.com/Bayfront-Software/vlt"
+homepage = "https://github.com/Bayfront-Software/vlt"
+readme = "README.md"
+keywords = ["secrets", "keychain", "cli", "env", "ai"]
+categories = ["command-line-utilities", "cryptography"]
 
 [dependencies]
 clap = { version = "4", features = ["derive"] }

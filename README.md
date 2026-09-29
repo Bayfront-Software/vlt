@@ -18,6 +18,17 @@ Stop scattering API keys across `.env` files. `vlt` stores secrets in an encrypt
 
 ## Install
 
+vlt runs on macOS (the master key lives in the macOS Keychain).
+
+### Homebrew
+
+```bash
+brew install bayfront-software/tap/vlt
+```
+
+Homebrew builds vlt from source, so the first run after installing or upgrading asks for
+access to the Keychain item. Choose **Always Allow**.
+
 ### From source (requires Rust 1.70+)
 
 ```bash
@@ -204,6 +215,8 @@ The exit code of the command is passed through.
 `vlt read <ref> --out <file>` (mode 600) and `vlt completions zsh|bash|fish`.
 
 ## Desktop app (GUI)
+
+The desktop app is not distributed as a download yet; build it from source if you want it.
 
 `gui/` is a Tauri 2 app on the same Rust core, in the style of 1Password 8: sidebar
 (all / favorites / needs attention / types / tags / trash), searchable list and detail pane.

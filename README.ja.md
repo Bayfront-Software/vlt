@@ -16,6 +16,17 @@ APIキーを `.env` ファイルにばらまくのはやめましょう。`vlt` 
 
 ## インストール
 
+vlt は macOS 専用です（マスターキーを macOS のキーチェーンに置くため）。
+
+### Homebrew
+
+```bash
+brew install bayfront-software/tap/vlt
+```
+
+Homebrew はソースからビルドするので、インストールや更新の後の初回は、キーチェーンの項目への
+アクセス許可を求められます。「常に許可」を選んでください。
+
 ### ソースからビルド（Rust 1.70+ 必要）
 
 ```bash
@@ -199,6 +210,8 @@ eval "$(vlt env --env envs/myapp)"
 `vlt read <参照> --out <ファイル>`（権限 600）、`vlt completions zsh|bash|fish`。
 
 ## デスクトップアプリ（GUI）
+
+デスクトップアプリは、今はダウンロード配布していません。使う場合はソースからビルドしてください。
 
 `gui/` は Rust コアを共用する Tauri 2 アプリで、1Password 8 風の3列構成です
 （サイドバー：すべて／お気に入り／要確認／種類／タグ／ゴミ箱、検索つき一覧、詳細）。
