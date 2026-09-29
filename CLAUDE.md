@@ -111,6 +111,22 @@ cd gui && npm run verify      # 画面ロジック(node --test) + Playwright E2E
   機械検証はモック経由。**利用者がこの Mac を使っている最中に GUI を起動して撮らない**
   （フォーカスを奪って入力を横取りし、画面全体の撮影は私的な画面を写す）。
 
+## 配布（CLI のみ）
+
+- **CLI は Homebrew の tap（`Bayfront-Software/homebrew-tap`、ローカル `~/Projects/homebrew-tap`）で配る。**
+  ソースからビルドする Formula なので、Apple の署名・公証が要らない。利用者は `brew install bayfront-software/tap/vlt`。
+- **GUI は配らない**（2026-09-29 判断）。Developer ID の配布自体は住所を公開しないが、利用者の事業の準備
+  （バーチャルオフィスでの開業届）が整う来年以降に回す。README にも「ソースからビルドのみ」と書いてある。
+- **リリース手順:**
+  1. `Cargo.toml` と `gui/src-tauri/tauri.conf.json` の version を上げ、`cargo test` と CI を緑にする
+  2. `git tag -a vX.Y.Z -m "vlt X.Y.Z" && git push origin vX.Y.Z`、`gh release create vX.Y.Z --notes-file ...`（英語）
+  3. `curl -sL https://github.com/Bayfront-Software/vlt/archive/refs/tags/vX.Y.Z.tar.gz | shasum -a 256`
+  4. tap の `Formula/vlt.rb` の `url` と `sha256` を更新して push
+  5. `brew install bayfront-software/tap/vlt && brew test ... && brew audit --strict ...` で確かめ、
+     開発機では `brew uninstall` と `brew untap` で片付ける（手元の署名済み `~/.cargo/bin/vlt` と二重にしない）
+- brew 版は ad-hoc 署名なので、更新のたびにキーチェーンの「常に許可」を聞かれる（Formula の caveats と README に記載）。
+- CI（`.github/workflows/ci.yml`）: macOS でコアのテストと警告ゼロのビルド、Ubuntu で画面ロジック。
+
 ## 寄付
 
 - `.github/FUNDING.yml`・README・GUI の設定画面から https://github.com/sponsors/gzer0-dev へ誘導する。
