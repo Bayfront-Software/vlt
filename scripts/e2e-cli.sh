@@ -48,6 +48,10 @@ expect_eq "$("$VLT" run --env-file "$WORK/.env" -- sh -c 'test "$API_KEY" = sk-t
 "$VLT" set envs/myapp 'postgres://u:p@db/app' --type environment --field DATABASE_URL >/dev/null
 "$VLT" set envs/myapp 'vlt://db/${APP_ENV:-dev}/password' --field DB_PASSWORD >/dev/null
 "$VLT" set envs/myapp bad --field 'NOT-VALID' >/dev/null 2>&1 && fail "invalid env var name must be rejected"
+"$VLT" set envs/myapp 3000 --field PORT --plain >/dev/null
+expect_eq "$("$VLT" run --env envs/myapp -- sh -c 'echo "port=$PORT"')" "port=3000" "--plain values are not masked"
+grep -q 'vlt://envs/myapp/DATABASE_URL' <<<"$("$VLT" show envs/myapp)" || fail "show uses variable names for environment items"
+expect_eq "$("$VLT" read vlt://envs/myapp/DATABASE_URL)" "postgres://u:p@db/app" "reference by variable name"
 expect_eq "$("$VLT" run --no-masking --env envs/myapp -- sh -c 'echo "$DATABASE_URL $DB_PASSWORD"')" "postgres://u:p@db/app dev-pw" "run --env"
 expect_eq "$(APP_ENV=prod "$VLT" run --no-masking --env envs/myapp -- sh -c 'echo "$DB_PASSWORD"')" "prod-pw" "\${APP_ENV} in references"
 expect_eq "$("$VLT" run --env envs/myapp -- sh -c 'echo "$DB_PASSWORD"')" "<concealed by vlt>" "env item secrets are masked"

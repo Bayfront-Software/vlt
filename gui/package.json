@@ -1,7 +1,7 @@
 {
   "name": "vlt-gui",
   "private": true,
-  "version": "0.3.0",
+  "version": "0.3.1",
   "description": "vlt desktop app (Tauri 2)",
   "scripts": {
     "dev": "tauri dev",

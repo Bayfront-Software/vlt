@@ -39,6 +39,10 @@ enum Commands {
         /// Item type when creating a new item (see `vlt types`)
         #[arg(long = "type")]
         item_type: Option<String>,
+        /// Store the field as a plain (non-secret) value: shown as-is and not masked
+        /// in `vlt run` output. For new fields and environment variables (e.g. PORT).
+        #[arg(long, requires = "field")]
+        plain: bool,
     },
 
     /// Print a secret (the primary field, or --field)
@@ -254,7 +258,10 @@ fn print_item(key: &str, item: &Item, reveal: bool) {
         println!("  ★ favorite");
     }
     let primary = item.item_type.primary_field();
-    let width = item.fields.iter().map(|f| f.id.chars().count()).max().unwrap_or(0).max(5);
+    // 環境変数の項目はラベルが変数名なので、id ではなくラベルで見せる（参照もラベルで解決できる）
+    let is_env = item.item_type == ItemType::Environment;
+    let name_of = |f: &Field| if is_env { f.label.clone() } else { f.id.clone() };
+    let width = item.fields.iter().map(|f| name_of(f).chars().count()).max().unwrap_or(0).max(5);
     for field in &item.fields {
         let shown = match field.kind {
             FieldKind::File => format!(
@@ -273,9 +280,9 @@ fn print_item(key: &str, item: &Item, reveal: bool) {
         let reference = if primary == Some(field.id.as_str()) {
             reference::build(key, None)
         } else {
-            reference::build(key, Some(&field.id))
+            reference::build(key, Some(&name_of(field)))
         };
-        println!("  {:<width$}  {shown}\n  {:<width$}  └ {reference}", field.id, "");
+        println!("  {:<width$}  {shown}\n  {:<width$}  └ {reference}", name_of(field), "");
     }
     if !item.notes.is_empty() {
         println!("  {:<width$}  {}", NOTES_FIELD, item.notes.replace('\n', "\n      "));
@@ -299,6 +306,8 @@ fn item_json(key: &str, item: &Item, reveal: bool) -> String {
             };
             let reference = if primary == Some(f.id.as_str()) {
                 reference::build(key, None)
+            } else if item.item_type == ItemType::Environment {
+                reference::build(key, Some(&f.label))
             } else {
                 reference::build(key, Some(&f.id))
             };
@@ -348,7 +357,7 @@ fn main() {
             println!("Vault initialized. Master key stored in OS Keychain.");
         }
 
-        Commands::Set { key, value, file, field, item_type } => {
+        Commands::Set { key, value, file, field, item_type, plain } => {
             let store = load_store();
             let new_type = item_type
                 .as_deref()
@@ -392,9 +401,13 @@ fn main() {
                             die("use --file for file fields");
                         }
                         f.value = secret_value;
+                        if plain {
+                            f.kind = FieldKind::Text;
+                        }
                     } else {
                         let id = item.unique_field_id(&name);
-                        item.fields.push(Field { value: secret_value, ..Field::new(&id, &name, FieldKind::Concealed) });
+                        let kind = if plain { FieldKind::Text } else { FieldKind::Concealed };
+                        item.fields.push(Field { value: secret_value, ..Field::new(&id, &name, kind) });
                     }
                     store.put_item(&key, &item).or_die();
                 }
