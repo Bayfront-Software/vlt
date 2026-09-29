@@ -63,7 +63,14 @@ pub fn db_path() -> PathBuf {
         .unwrap_or_else(|| dirs::home_dir().unwrap().join(".local/share"))
         .join("vlt");
     std::fs::create_dir_all(&data_dir).expect("Failed to create data directory");
+    // 既定の保存先だけを本人専用にする（VLT_DB の親は /tmp などの共有フォルダがあり得るので触らない）。
+    let _ = restrict_permissions(&data_dir, 0o700);
     data_dir.join("vault.db")
+}
+
+fn restrict_permissions(path: &Path, mode: u32) -> std::io::Result<()> {
+    use std::os::unix::fs::PermissionsExt;
+    std::fs::set_permissions(path, std::fs::Permissions::from_mode(mode))
 }
 
 /// kind 列（ITEM 行）か binary フラグ（RAW 行）から種類を決める。
@@ -84,6 +91,8 @@ impl SecretStore {
 
     pub fn open_at(path: &Path, master_key: [u8; 32]) -> Result<Self, String> {
         let conn = Connection::open(path).map_err(db_err("Failed to open database"))?;
+        // 中身は暗号化済みだが、キー名・件数・日時は平文なので本人以外に読ませない。
+        restrict_permissions(path, 0o600).map_err(|e| format!("Failed to restrict permissions: {e}"))?;
 
         let version: i64 = conn
             .query_row("PRAGMA user_version", [], |row| row.get(0))
@@ -742,6 +751,29 @@ mod tests {
         assert_eq!(store.get_bytes("ks").unwrap(), (vec![7, 7], true));
         let version: i64 = store.conn.query_row("PRAGMA user_version", [], |r| r.get(0)).unwrap();
         assert_eq!(version, SCHEMA_VERSION);
+    }
+
+    #[test]
+    fn database_file_is_private_to_the_user() {
+        use std::os::unix::fs::PermissionsExt;
+        let db = TempDb::new("perms");
+        std::fs::write(&db.0, b"").unwrap();
+        std::fs::set_permissions(&db.0, std::fs::Permissions::from_mode(0o644)).unwrap();
+        std::fs::remove_file(&db.0).unwrap();
+        SecretStore::open_at(&db.0, crypto::generate_master_key()).unwrap();
+        let mode = std::fs::metadata(&db.0).unwrap().permissions().mode() & 0o777;
+        assert_eq!(mode, 0o600, "新規の vault.db は本人だけが読める");
+    }
+
+    #[test]
+    fn existing_database_permissions_are_tightened() {
+        use std::os::unix::fs::PermissionsExt;
+        let db = TempDb::new("perms-existing");
+        SecretStore::open_at(&db.0, crypto::generate_master_key()).unwrap();
+        std::fs::set_permissions(&db.0, std::fs::Permissions::from_mode(0o644)).unwrap();
+        SecretStore::open_at(&db.0, crypto::generate_master_key()).unwrap();
+        let mode = std::fs::metadata(&db.0).unwrap().permissions().mode() & 0o777;
+        assert_eq!(mode, 0o600);
     }
 
     #[test]
