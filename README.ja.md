@@ -11,6 +11,8 @@ APIキーを `.env` ファイルにばらまくのはやめましょう。`vlt` 
 - **`vlt://` 参照スキーム** — 環境変数に参照を設定し、実行時に解決
 - **ゼロコンフィグ** — 単一バイナリ、デーモン不要、クラウドアカウント不要
 - **シェル統合** — `eval "$(vlt env)"` でシームレスなワークフロー
+- **出力の伏せ字** — `vlt run` の子が出力した秘密を、ログ・CI・AI エージェントの記録では `<concealed by vlt>` に置き換え
+- **環境変数の項目** — 変数の組を vault に置き、`vlt run --env` でまとめて注入（.env をディスクに置かない）
 
 ## インストール
 
@@ -175,6 +177,27 @@ vlt show github/login                         # フィールドと参照の一�
 ほかに `vlt set <key> <value> [--field f] [--type login]`、`vlt get <key> [--field f]`、
 `vlt totp <key>`、`vlt generate`、`vlt types`、`vlt delete`（ゴミ箱へ）、`vlt restore`、`vlt trash`。
 
+## コマンドへの秘密の注入
+
+```bash
+# 変数の組を vault に置く（1Password Environments / envchain 相当）
+vlt set envs/myapp 'postgres://app:pw@db/app' --type environment --field DATABASE_URL
+vlt set envs/myapp 'vlt://db/${APP_ENV:-dev}/password' --field DB_PASSWORD   # 値に参照も書ける
+vlt run --env envs/myapp -- npm start
+APP_ENV=prod vlt run --env envs/myapp -- ./deploy.sh
+
+# direnv を使うなら .envrc に
+eval "$(vlt env --env envs/myapp)"
+```
+
+**伏せ字.** コマンドの出力が端末でないとき（パイプ・ログ・CI・AI エージェント）は、標準出力と
+標準エラーに出た秘密の値を `<concealed by vlt>` に置き換えます。端末への出力はそのままにするので、
+`vlt run -- claude` のような対話型のプログラムも動きます。どこでも伏せる `op run` とは既定が違います。
+常に伏せるなら `--mask`、伏せないなら `--no-masking`。コマンドの終了コードはそのまま返します。
+
+**スクリプト向け.** `vlt list --json`、`vlt show <key> --json`（伏せる値は `--reveal` が無ければ null）、
+`vlt read <参照> --out <ファイル>`（権限 600）、`vlt completions zsh|bash|fish`。
+
 ## デスクトップアプリ（GUI）
 
 `gui/` は Rust コアを共用する Tauri 2 アプリで、1Password 8 風の3列構成です
@@ -190,3 +213,8 @@ vlt show github/login                         # フィールドと参照の一�
 ./scripts/install.sh   # ビルド・署名（失効した証明書は避ける）・CLI とアプリのインストール
 cd gui && npm run verify
 ```
+
+## 支援
+
+vlt は無料のオープンソース（MIT）です。役に立ったら
+[GitHub Sponsors で開発を支援](https://github.com/sponsors/gzer0-dev)していただけると励みになります。

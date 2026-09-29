@@ -15,6 +15,9 @@ const P = {
   wifi: '<path d="M2.5 8a11 11 0 0 1 15 0M5 10.8a7.2 7.2 0 0 1 10 0M7.6 13.5a3.4 3.4 0 0 1 4.8 0"/><circle cx="10" cy="16" r=".6"/>',
   bank_account: '<path d="M3 8l7-4.5L17 8M4.5 8.5v6M8 8.5v6M12 8.5v6M15.5 8.5v6M3 16.5h14"/>',
   document: '<path d="M5 2.5h6.5L15 6v11.5H5z"/><path d="M11.5 2.5V6H15"/>',
+  environment: '<rect x="2.5" y="3.5" width="15" height="13" rx="1.8"/><path d="M5.5 7.5h2M5.5 10h2M5.5 12.5h2M9.5 7.5h5M9.5 10h5M9.5 12.5h3"/>',
+  heart: '<path d="M10 16.5s-6.5-3.9-6.5-8.3A3.6 3.6 0 0 1 10 6.3a3.6 3.6 0 0 1 6.5 1.9c0 4.4-6.5 8.3-6.5 8.3z"/>',
+  terminal: '<rect x="2.5" y="3.5" width="15" height="13" rx="1.8"/><path d="M5.5 8l2.5 2-2.5 2M9.5 12.5h4"/>',
   // UI
   all: '<rect x="3" y="3" width="5.5" height="5.5" rx="1"/><rect x="11.5" y="3" width="5.5" height="5.5" rx="1"/><rect x="3" y="11.5" width="5.5" height="5.5" rx="1"/><rect x="11.5" y="11.5" width="5.5" height="5.5" rx="1"/>',
   star: '<path d="M10 2.8l2.2 4.6 5 .6-3.7 3.4 1 5-4.5-2.5-4.5 2.5 1-5L2.8 8l5-.6z"/>',
@@ -56,6 +59,7 @@ export const TYPE_TINT = {
   wifi: "#1b86b8",
   bank_account: "#2a7d64",
   document: "#8a6a4a",
+  environment: "#5f7a1f",
 };
 
 export function icon(name, { size = 18, strokeWidth = 1.6 } = {}) {

@@ -13,6 +13,8 @@ Stop scattering API keys across `.env` files. `vlt` stores secrets in an encrypt
 - **`vlt://` reference scheme** — use references in env vars, resolve at runtime
 - **Zero config** — single binary, no daemon, no cloud account required
 - **Shell integration** — `eval "$(vlt env)"` for seamless workflow
+- **Output masking** — secrets printed by the child of `vlt run` become `<concealed by vlt>` in logs, CI and AI-agent transcripts
+- **Environment items** — keep a whole set of env vars in the vault and inject it with `vlt run --env`, no `.env` on disk
 
 ## Install
 
@@ -179,6 +181,28 @@ vlt show github/login                         # fields and their references (mas
 Other commands: `vlt set <key> <value> [--field f] [--type login]`, `vlt get <key> [--field f]`,
 `vlt totp <key>`, `vlt generate`, `vlt types`, `vlt delete` (to the trash), `vlt restore`, `vlt trash`.
 
+## Injecting secrets into commands
+
+```bash
+# A set of variables stored in the vault (like 1Password Environments / envchain)
+vlt set envs/myapp 'postgres://app:pw@db/app' --type environment --field DATABASE_URL
+vlt set envs/myapp 'vlt://db/${APP_ENV:-dev}/password' --field DB_PASSWORD   # values may be references
+vlt run --env envs/myapp -- npm start
+APP_ENV=prod vlt run --env envs/myapp -- ./deploy.sh
+
+# direnv: put this in .envrc
+eval "$(vlt env --env envs/myapp)"
+```
+
+**Masking.** When the command's output is not a terminal (piped, logged, run by CI or an AI agent),
+secret values in stdout/stderr are replaced with `<concealed by vlt>`. Output to a terminal is left
+alone so interactive programs such as `vlt run -- claude` keep working. This differs from
+`op run`, which masks by default everywhere. Use `--mask` to always mask and `--no-masking` to never mask.
+The exit code of the command is passed through.
+
+**Scripting.** `vlt list --json`, `vlt show <key> --json` (concealed values are `null` unless `--reveal`),
+`vlt read <ref> --out <file>` (mode 600) and `vlt completions zsh|bash|fish`.
+
 ## Desktop app (GUI)
 
 `gui/` is a Tauri 2 app on the same Rust core, in the style of 1Password 8: sidebar
@@ -194,3 +218,8 @@ Other commands: `vlt set <key> <value> [--field f] [--type login]`, `vlt get <ke
 ./scripts/install.sh   # builds, signs (skipping revoked certificates) and installs CLI + app
 cd gui && npm run verify
 ```
+
+## Support
+
+vlt is free and open source (MIT). If it saves you time, consider
+[sponsoring the development on GitHub](https://github.com/sponsors/gzer0-dev).

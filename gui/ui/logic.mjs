@@ -185,6 +185,31 @@ export function validateKey(key) {
   return null;
 }
 
+/** シェルの環境変数名として使えるか（Rust 側 env::is_env_name と同じ規則）。 */
+export function isEnvName(name) {
+  return /^[A-Za-z_][A-Za-z0-9_]*$/.test(name);
+}
+
+/** 環境変数の項目の編集内容を検証する。エラー文字列 or null。 */
+export function validateEnvFields(fields) {
+  const seen = new Set();
+  for (const f of fields) {
+    if (!isEnvName(f.label)) return `「${f.label}」は環境変数名として使えません（英字か _ で始まり、英数字と _ だけ）`;
+    if (seen.has(f.label)) return `変数 ${f.label} が重複しています`;
+    seen.add(f.label);
+  }
+  return null;
+}
+
+/** 環境変数の項目の使い方（画面でコピーさせるコマンド）。 */
+export function envUsage(key) {
+  const quoted = /^[A-Za-z0-9_./-]+$/.test(key) ? key : `'${key.replace(/'/g, "'\\''")}'`;
+  return {
+    run: `vlt run --env ${quoted} -- <コマンド>`,
+    direnv: `eval "$(vlt env --env ${quoted})"`,
+  };
+}
+
 /** "work, dev  ,Work" → ["work", "dev"]（空と大文字小文字違いの重複を除く）。 */
 export function parseTags(text) {
   const seen = new Set();

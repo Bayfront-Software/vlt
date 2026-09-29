@@ -5,7 +5,7 @@ window.__installVltMock = () => {
   const TYPES = [
     ["login", "ログイン"], ["password", "パスワード"], ["api_credential", "API 認証情報"], ["secure_note", "セキュアノート"],
     ["credit_card", "クレジットカード"], ["identity", "個人情報"], ["ssh_key", "SSH 鍵"], ["database", "データベース"],
-    ["server", "サーバー"], ["software_license", "ソフトウェアライセンス"], ["wifi", "Wi-Fi"], ["bank_account", "銀行口座"], ["document", "書類"],
+    ["server", "サーバー"], ["software_license", "ソフトウェアライセンス"], ["wifi", "Wi-Fi"], ["bank_account", "銀行口座"], ["document", "書類"], ["environment", "環境変数"],
   ];
   const label = (t) => TYPES.find(([id]) => id === t)[1];
   const PRIMARY = { login: "password", password: "password", database: "password", server: "password", wifi: "password", api_credential: "credential", credit_card: "number", ssh_key: "private_key", software_license: "license_key", bank_account: "account_number", document: "file" };
@@ -25,6 +25,7 @@ window.__installVltMock = () => {
     ["android/hushcam/upload-keystore", { type: "document", favorite: false, tags: ["android"], notes: "", fields: [f("file", "ファイル", "file", "AAAA", { filename: "upload-keystore.jks", size: 2718 })], created_at: "2026-07-18 01:10:02", updated_at: "2026-07-18 01:10:02" }],
     ["home/wifi", { type: "login", favorite: false, tags: [], notes: "", fields: [f("username", "ユーザー名", "text", "router-admin"), f("password", "パスワード", "concealed", "password")], created_at: "2026-06-01 00:00:00", updated_at: "2026-06-01 00:00:00" }],
     ["home/nas", { type: "login", favorite: false, tags: [], notes: "", fields: [f("username", "ユーザー名", "text", "admin"), f("password", "パスワード", "concealed", "password")], created_at: "2026-06-01 00:00:00", updated_at: "2026-06-01 00:00:00" }],
+    ["envs/myapp", { type: "environment", favorite: false, tags: ["work"], notes: "", fields: [f("database_url", "DATABASE_URL", "concealed", "postgres://app:pw@db/app"), f("port", "PORT", "text", "5432"), f("openai_api_key", "OPENAI_API_KEY", "text", "vlt://openai/api-key")], created_at: "2026-09-29 00:00:00", updated_at: "2026-09-29 00:00:00" }],
     ["servers/prod-ssh", { type: "ssh_key", favorite: true, tags: ["infra"], notes: "", fields: [f("private_key", "秘密鍵", "secret_block", "-----BEGIN OPENSSH PRIVATE KEY-----\nb3BlbnNzaC1rZXktdjEAAAAA\n-----END OPENSSH PRIVATE KEY-----"), f("public_key", "公開鍵", "multiline", "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAI deploy@prod"), f("fingerprint", "フィンガープリント", "text", "SHA256:4f9x…Qk"), f("key_type", "鍵の種類", "text", "ed25519")], created_at: "2026-05-01 00:00:00", updated_at: "2026-05-01 00:00:00" }],
   ]);
   const trash = [];
@@ -37,7 +38,7 @@ window.__installVltMock = () => {
   const need = (key) => { const it = items.get(key); if (!it) throw `Secret not found: ${key}`; return it; };
   const ref = (key, it, fid) => (PRIMARY[it.type] === fid ? `vlt://${key}` : `vlt://${key}/${fid}`);
   const pwOf = (it) => it.fields.find((x) => x.id === "password" && x.kind === "concealed" && x.value)?.value;
-  const subtitle = (it) => it.fields.find((x) => ["username", "ssid", "cardholder", "email"].includes(x.id) && x.value && !secretKinds.includes(x.kind))?.value
+  const subtitle = (it) => it.type === "environment" ? `${it.fields.length} 個の変数` : it.fields.find((x) => ["username", "ssid", "cardholder", "email"].includes(x.id) && x.value && !secretKinds.includes(x.kind))?.value
     ?? it.fields.find((x) => x.kind === "file")?.filename ?? label(it.type);
 
   const commands = {
@@ -67,7 +68,7 @@ window.__installVltMock = () => {
     copy_field: ({ key, field }) => { window.__clipboard = field === "notes" ? need(key).notes : need(key).fields.find((y) => y.id === field).value; return settings.clipboard_clear_secs; },
     copy_secret: ({ text }) => { window.__clipboard = text; return settings.clipboard_clear_secs; },
     copy_plain: ({ text }) => { window.__clipboard = text; },
-    open_url: () => {},
+    open_url: ({ url }) => { window.__opened = url; },
     template_item: ({ itemType, options }) => {
       // ops::new_item と同じく、自分で決めるパスワードの種類だけ生成して入れる
       const generates = ["login", "password", "server", "database"].includes(itemType);

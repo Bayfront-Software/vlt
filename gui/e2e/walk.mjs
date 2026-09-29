@@ -45,7 +45,7 @@ for (const colorScheme of ["light", "dark"]) {
   await page.goto(url);
   await page.waitForSelector("#screen-main:not([hidden])");
   check((await page.evaluate(() => window.__calls)).filter((c) => c === "unlock").length === 1, "起動時の自動解錠は一度だけ");
-  check(await page.locator("#list .row").count() === 7, "一覧に7件");
+  check(await page.locator("#list .row").count() === 8, "一覧に8件");
   check(await page.locator('.cat[data-category="watchtower"] .count.alert').textContent() === "2", "要確認が2件（弱い＋使い回し）");
   await shot("1-main");
 
@@ -96,6 +96,15 @@ for (const colorScheme of ["light", "dark"]) {
   await page.click('.row[data-key="android/hushcam/upload-keystore"]');
   await page.waitForSelector('#detail-item [data-action="save-file"]');
   check((await page.textContent("#detail-item")).includes("upload-keystore.jks"), "書類のファイル名");
+
+  // 環境変数の項目: 使い方のコマンドをコピーできる
+  await page.click('.row[data-key="envs/myapp"]');
+  await page.waitForSelector("#detail-item .card.usage");
+  check((await page.textContent("#detail-item")).includes("3 個の変数") || (await page.textContent('.row[data-key="envs/myapp"]')).includes("3 個の変数"), "変数の数を副題に出す");
+  check(!(await page.textContent("#detail-item")).includes("postgres://app:pw"), "秘密の値は伏せる");
+  await page.click('[data-action="copy-text"] >> nth=0');
+  check(await clipboard() === "vlt run --env envs/myapp -- <コマンド>", "vlt run --env のコマンドをコピー");
+  await shot("4c-environment");
 
   // 検索 → Enter で先頭を選ぶ
   await page.keyboard.press("Meta+f");
@@ -158,6 +167,26 @@ for (const colorScheme of ["light", "dark"]) {
   await page.waitForSelector("#editor", { state: "hidden" });
   check(await page.textContent("#detail-item h1") === "stripe-live", "改名できる");
 
+  // 環境変数の項目を新規作成: 変数名が不正なら保存前に止める
+  await page.keyboard.press("Meta+n");
+  await page.click('.type-choice:has-text("環境変数")');
+  await page.waitForSelector("#editor:not([hidden])");
+  check((await page.textContent("#btn-add-field")).includes("変数を追加"), "環境変数では「変数を追加」");
+  await page.fill("#edit-key", "envs/api");
+  await page.click('[data-action="add-field"]');
+  await page.click('#popover button:has-text("秘密の値")');
+  check(await page.getAttribute("#edit-fields .label-input", "placeholder") === "VARIABLE_NAME", "変数名の入力欄");
+  await page.fill("#edit-fields .label-input", "NOT-VALID");
+  await page.fill("#edit-field-0", "abc123");
+  await page.keyboard.press("Meta+s");
+  await page.waitForFunction(() => document.getElementById("edit-error").textContent.includes("NOT-VALID"));
+  await page.fill("#edit-fields .label-input", "STRIPE_KEY");
+  await page.keyboard.press("Meta+s");
+  await page.waitForSelector("#editor", { state: "hidden" });
+  check((await page.textContent('.row[data-key="envs/api"]')).includes("1 個の変数"), "環境変数の項目を保存");
+  await page.click('.row[data-key="dev/stripe-live"]');
+  await page.waitForFunction(() => document.querySelector("#detail-item h1")?.textContent === "stripe-live");
+
   // お気に入り
   await page.click('[data-action="toggle-favorite"]');
   await page.click('.cat[data-category="favorites"]');
@@ -214,6 +243,8 @@ for (const colorScheme of ["light", "dark"]) {
   await page.click('[data-action="open-settings"]');
   await page.waitForSelector("#modal:not([hidden]) .setting-row");
   await shot("9-settings");
+  await page.click('[data-action="open-sponsor"]');
+  check(await page.evaluate(() => window.__opened) === "https://github.com/sponsors/gzer0-dev", "支援ページを開く");
   await page.selectOption("#modal-body select >> nth=0", "5");
   await page.click("#modal-ok");
   await hidden("#modal");

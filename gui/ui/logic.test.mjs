@@ -190,3 +190,17 @@ test("parsePaneWidths は壊れた保存値を既定値に戻す", () => {
   assert.deepEqual(L.parsePaneWidths('{"sidebar":"x","list":250}'), { ...L.PANE_DEFAULTS, list: 250 });
   assert.deepEqual(L.parsePaneWidths('{"sidebar":180,"list":260}'), { sidebar: 180, list: 260 });
 });
+
+test("isEnvName と validateEnvFields は Rust 側と同じ規則で弾く", () => {
+  for (const ok of ["A", "_X", "DATABASE_URL", "api_key2"]) assert.ok(L.isEnvName(ok), ok);
+  for (const bad of ["", "1A", "A-B", "A B", "ドメイン"]) assert.ok(!L.isEnvName(bad), bad);
+  assert.equal(L.validateEnvFields([{ label: "A" }, { label: "B" }]), null);
+  assert.match(L.validateEnvFields([{ label: "NOT-VALID" }]), /NOT-VALID/);
+  assert.match(L.validateEnvFields([{ label: "A" }, { label: "A" }]), /重複/);
+});
+
+test("envUsage は必要なときだけキーを引用符で囲む", () => {
+  assert.equal(L.envUsage("envs/myapp").run, "vlt run --env envs/myapp -- <コマンド>");
+  assert.equal(L.envUsage("envs/myapp").direnv, 'eval "$(vlt env --env envs/myapp)"');
+  assert.equal(L.envUsage("my app").run, "vlt run --env 'my app' -- <コマンド>");
+});

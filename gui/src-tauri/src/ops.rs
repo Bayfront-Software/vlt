@@ -383,6 +383,21 @@ pub fn save(
         }
         item.fields.push(field);
     }
+    if item.item_type == ItemType::Environment {
+        // ラベルがそのまま変数名になるので、シェルで使える名前で重複なしに限る
+        let mut seen = HashSet::new();
+        for f in &item.fields {
+            if !vlt::env::is_env_name(&f.label) {
+                return Err(format!("「{}」は環境変数名として使えません（英字か _ で始まり、英数字と _ だけ）", f.label));
+            }
+            if f.kind == FieldKind::File {
+                return Err(format!("{} はファイルなので環境変数にできません", f.label));
+            }
+            if !seen.insert(f.label.clone()) {
+                return Err(format!("変数 {} が重複しています", f.label));
+            }
+        }
+    }
     if item.item_type == ItemType::Document
         && !item.fields.iter().any(|f| f.kind == FieldKind::File && !f.value.is_empty())
     {
@@ -671,6 +686,29 @@ mod tests {
     fn new_item_rejects_invalid_generator_options() {
         let options = GeneratorOptions { length: 2, ..GeneratorOptions::default() };
         assert!(new_item(ItemType::Login, &options).is_err());
+    }
+
+    fn env_var(label: &str, value: &str) -> EditableField {
+        EditableField { id: String::new(), label: label.into(), kind: FieldKind::Concealed, value: value.into(), filename: None, pending_file: None }
+    }
+
+    #[test]
+    fn environment_item_requires_valid_unique_variable_names() {
+        let db = TempDb::new("env-names");
+        let store = db.open();
+        let mut e = template(ItemType::Environment);
+        e.fields = vec![env_var("DATABASE_URL", "postgres://x"), env_var("PORT", "5432")];
+        save_new(&store, "envs/app", &e);
+        assert_eq!(list(&store).unwrap()[0].subtitle, "2 個の変数");
+
+        let mut bad = template(ItemType::Environment);
+        bad.fields = vec![env_var("NOT-VALID", "x")];
+        let err = save(&store, None, "envs/bad", &bad, &mut PendingFiles::new()).unwrap_err();
+        assert!(err.contains("NOT-VALID"), "{err}");
+
+        let mut dup = template(ItemType::Environment);
+        dup.fields = vec![env_var("A", "1"), env_var("A", "2")];
+        assert!(save(&store, None, "envs/dup", &dup, &mut PendingFiles::new()).unwrap_err().contains("A"));
     }
 
     #[test]

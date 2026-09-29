@@ -6,7 +6,8 @@ Rust製のローカルシークレットマネージャー。AES-256-GCM + SQLit
 構成（依存は上から下へ一方向）:
 - `src/`（crate `vlt`）= lib + CLI (`src/main.rs`)
   - `crypto` 暗号 / `keychain` マスターキー / `store` SQLite / `portable` .vltx
-  - `item` 項目モデル / `reference` 秘密参照 / `totp` / `generator`
+  - `item` 項目モデル / `reference` 秘密参照と注入する環境の組み立て / `totp` / `generator`
+  - `env` 変数名・`${VAR}` 展開 / `mask` 伏せ字 / `runner` `vlt run` の子プロセス中継
 - `gui/src-tauri`（crate `vlt-gui`）= lib を path 依存で使う Tauri 2 アプリ
   - `ops.rs` 画面用の操作（純粋・一時 DB でテスト）/ `lib.rs` コマンドと常駐処理 /
     `macos.rs` Touch ID・クリップボード・画面ロック検知 / `settings.rs`
@@ -37,6 +38,13 @@ Rust製のローカルシークレットマネージャー。AES-256-GCM + SQLit
   完全一致が常に勝つので v0.2 までの `vlt://<キー>` は壊れない。フィールドは id → ラベル
   （大文字小文字無視）の順で探す。ファイルは参照で渡さない（環境変数に入らないため）。
   キーに `?` を許さないのはクエリと区別できなくなるから（GUI/ops で弾く）。
+- **`vlt run` の伏せ字は「出力が端末でないとき」だけ**（`runner::mask_streams`）: 漏れて困るのは
+  ログ・CI・AI エージェントの記録で、どれも端末ではない。端末まで伏せるには出力をパイプにする必要があり、
+  `vlt run -- claude` のような対話型が壊れる。`op run`（常に伏せる）と既定が違うのは意図的。
+  伏せる物が無い・どちらの出力も伏せないときは従来通り exec する。4 文字未満の値は伏せない（出力が潰れるため）。
+- **秘密かどうかは参照先のフィールドの種類で決める**（`reference::resolve_detailed`）。ユーザー名は伏せない。
+- **環境変数の項目（type environment）**: ラベル＝変数名（`env::is_env_name`）。値に `vlt://` 参照を書け、
+  参照の中の `${VAR}` は注入する環境（解決前の値）で展開する。環境変数の項目以外を `--env` に渡すとエラー。
 - **削除はゴミ箱へ（30 日で自動消去）**: GUI も CLI も。完全削除は `--purge` かゴミ箱から。
 - **Touch ID 解錠**: 解錠時に LocalAuthentication（Touch ID、無ければログインパスワード）で本人確認
   してから Keychain を読む。Keychain 項目自体に生体認証の ACL を付ける方式は、データ保護キーチェーン
@@ -76,6 +84,7 @@ Rust製のローカルシークレットマネージャー。AES-256-GCM + SQLit
   テスト `unseal_reads_v1_files_without_format_field` と `unseal_rejects_unknown_version` が門番。
 - **store のスキーマ移行**: `user_version` の `< 1` / `< 2` の分岐を消さない。新しい列は追加だけ。
   `SCHEMA_VERSION` より新しい DB は開かない（古い vlt が新しい DB を壊さないため）。
+- **伏せ字の文字列 `<concealed by vlt>`**: 利用者のログ検索や CI の判定が依存しうる。変えない。
 - **`format` の値（0=RAW, 1=ITEM）と `ItemType::as_str` の文字列**: DB と .vltx に保存される。変えない。
 - **参照の解決順（完全一致 → 最後の `/` で分割）**: 変えると既存の `.env` や設定ファイルの参照が別の値を指す。
 - **主役フィールド（`ItemType::primary_field`）**: 変えると `vlt get` と `vlt://<key>` の結果が変わる。
@@ -86,7 +95,7 @@ CLI の表示形式、設定の選択肢。
 ## 検証
 
 ```bash
-cargo test                    # コア 61 件（crypto/portable/store/item/reference/totp/generator）
+cargo test                    # コア 83 件（crypto/portable/store/item/reference/totp/generator）
 cargo build --release         # 警告ゼロ
 ./scripts/e2e-cli.sh          # CLI を実 Keychain で端から端まで（専用サービス名＋一時 DB、後始末つき）
 cd gui && npm run verify      # 画面ロジック(node --test) + Playwright E2E(モック invoke) + cargo test/build
@@ -101,6 +110,11 @@ cd gui && npm run verify      # 画面ロジック(node --test) + Playwright E2E
 - 実 Keychain と Touch ID を通る本物のアプリは、人が一度「常に許可」と指紋を当てる必要がある。
   機械検証はモック経由。**利用者がこの Mac を使っている最中に GUI を起動して撮らない**
   （フォーカスを奪って入力を横取りし、画面全体の撮影は私的な画面を写す）。
+
+## 寄付
+
+- `.github/FUNDING.yml`・README・GUI の設定画面から https://github.com/sponsors/gzer0-dev へ誘導する。
+  有料化はしない方針（2026-09-29 に判断。監査なしの秘密管理を売る責任と、同期が中心設計と衝突するため）。
 
 ## 実運用メモ
 

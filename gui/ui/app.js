@@ -11,6 +11,11 @@ const $ = (id) => document.getElementById(id);
 /** 表示した値を自動で隠すまでの秒数。 */
 const REVEAL_SECS = 30;
 const PANE_STORAGE_KEY = "vlt.panes";
+const SPONSOR_URL = "https://github.com/sponsors/gzer0-dev";
+const ENV_FIELD_KINDS = [
+  { kind: "concealed", label: "秘密の値（伏せて表示・出力で伏せ字）" },
+  { kind: "text", label: "普通の値（ポート番号・URL など）" },
+];
 /** ← → キーで仕切りを動かす量。 */
 const PANE_KEY_STEP = 16;
 
@@ -330,7 +335,8 @@ function fieldRow(view, f) {
   } else if (f.secret) {
     const shown = revealed != null;
     main.append(h("div", { class: "field-value " + (shown ? "mono" : "masked") }, shown ? revealed : "••••••••••••"));
-    if (f.strength) {
+    // 強度はパスワードのための目安。環境変数（接続文字列など）には意味がないので出さない。
+    if (f.strength && view.item_type !== "environment") {
       const labels = { weak: "弱い", fair: "普通", strong: "強い", very_strong: "とても強い" };
       main.append(h("div", { class: `strength ${f.strength}` }, h("span", { class: "bar" }, h("i")), labels[f.strength]));
     }
@@ -380,7 +386,17 @@ function renderItemView() {
     root.append(h("div", { class: "notice" }, fromHtml(icon("shield", { size: 16 })), h("span", {}, reasons.join(" "), "編集からパスワードを生成し直せます。")));
   }
 
-  const filled = view.fields.filter((f) => f.has_value);
+  if (view.item_type === "environment") {
+    const usage = L.envUsage(view.key);
+    const usageRow = (label, text) => h("div", { class: "field" },
+      h("div", { class: "field-main" }, h("span", { class: "field-label" }, label), h("div", { class: "field-value mono" }, text)),
+      h("div", { class: "field-actions pinned" }, iconButton("copy", "コピー", { action: "copy-text", text, label })));
+    root.append(h("section", { class: "card usage" },
+      usageRow("コマンドに注入する（.env をディスクに置かない）", usage.run),
+      usageRow("direnv の .envrc に書く", usage.direnv)));
+  }
+
+  const filled = view.item_type === "environment" ? view.fields : view.fields.filter((f) => f.has_value);
   if (filled.length) root.append(h("section", { class: "card" }, filled.map((f) => fieldRow(view, f))));
 
   if (view.notes) {
@@ -392,7 +408,8 @@ function renderItemView() {
   }
 
   if (!filled.length && !view.notes) {
-    root.append(h("section", { class: "card" }, h("div", { class: "field" }, h("div", { class: "field-main muted" }, "まだ何も入っていません。「編集」から入力できます。"))));
+    const empty = view.item_type === "environment" ? "まだ変数がありません。「編集」から DATABASE_URL などを足せます。" : "まだ何も入っていません。「編集」から入力できます。";
+    root.append(h("section", { class: "card" }, h("div", { class: "field" }, h("div", { class: "field-main muted" }, empty))));
   }
 
   if (view.tags.length) {
@@ -496,6 +513,7 @@ function renderEditor() {
   const typeLabel = state.types.find((t) => t.id === e.item.item_type)?.label ?? "";
   $("edit-badge").replaceChildren(fromHtml(typeBadge(e.item.item_type, "lg")));
   $("edit-type").textContent = e.originalKey ? `${typeLabel}を編集` : `新しい${typeLabel}`;
+  $("btn-add-field").lastChild.textContent = e.item.item_type === "environment" ? "変数を追加" : "フィールドを追加";
   $("edit-key").value = e.key;
   updateRefPreview();
   $("edit-notes").value = e.item.notes;
@@ -528,11 +546,21 @@ function renderEditFields() {
   const root = $("edit-fields");
   root.replaceChildren();
   if (!e.item.fields.length) {
-    root.append(h("p", { class: "muted", style: "margin:12px 0" }, "フィールドはありません。メモ欄か「フィールドを追加」を使ってください。"));
+    root.append(h("p", { class: "muted", style: "margin:12px 0" }, e.item.item_type === "environment"
+      ? "変数はまだありません。「変数を追加」で DATABASE_URL などを足してください。値に vlt://… の秘密参照も書けます。"
+      : "フィールドはありません。メモ欄か「フィールドを追加」を使ってください。"));
   }
   e.item.fields.forEach((f, index) => {
     const set = (patch) => Object.assign(e.item.fields[index], patch);
-    const label = h("input", { class: "label-input", value: f.label, "aria-label": "フィールド名", oninput: (ev) => set({ label: ev.target.value }) });
+    const isEnv = e.item.item_type === "environment";
+    const label = h("input", {
+      class: "label-input" + (isEnv ? " env-name" : ""),
+      value: f.label,
+      placeholder: isEnv ? "VARIABLE_NAME" : "フィールド名",
+      spellcheck: "false",
+      "aria-label": isEnv ? "変数名" : "フィールド名",
+      oninput: (ev) => set({ label: ev.target.value }),
+    });
     const remove = iconButton("x", "このフィールドを削除", { action: "remove-field", index: String(index) }, "danger");
     const controls = h("div", { class: "controls" });
     const idAttr = `edit-field-${index}`;
@@ -580,6 +608,10 @@ async function saveEditor() {
   e.item.favorite = $("edit-favorite").checked;
   const keyError = L.validateKey(e.key);
   if (keyError) { $("edit-error").textContent = keyError; $("edit-key").focus(); return; }
+  if (e.item.item_type === "environment") {
+    const envError = L.validateEnvFields(e.item.fields);
+    if (envError) { $("edit-error").textContent = envError; return; }
+  }
   try {
     await invoke("save_item", { originalKey: e.originalKey, key: e.key, item: e.item });
   } catch (err) {
@@ -782,6 +814,8 @@ function settingsDialog() {
           h("span", { style: "display:flex;gap:6px" },
             h("button", { type: "button", class: "btn secondary small", dataset: { action: "export" } }, "書き出す"),
             h("button", { type: "button", class: "btn secondary small", dataset: { action: "import" } }, "読み込む"))),
+        row("vlt を支援する", "vlt は無料のオープンソースです。役に立ったら GitHub Sponsors で開発を支援してください",
+          h("button", { type: "button", class: "btn secondary small", dataset: { action: "open-sponsor" }, icon: icon("heart", { size: 14 }) + "<span>支援する</span>" })),
         row("vault の場所", null, h("code", {}, state.info.db_path)),
         row("バージョン", null, h("span", { class: "muted" }, `vlt ${state.info.version}`)));
       return { autoLock, clip, screenLock, touchId, shortcut };
@@ -985,10 +1019,11 @@ const actions = {
     await renderDetail();
   },
   "add-field": (el) => {
-    openPopover(el, FIELD_KINDS.map((k) => ({
+    const isEnv = state.editing.item.item_type === "environment";
+    openPopover(el, (isEnv ? ENV_FIELD_KINDS : FIELD_KINDS).map((k) => ({
       label: k.label,
       run: () => {
-        state.editing.item.fields.push({ id: "", label: k.label, kind: k.kind, value: "", filename: null, pending_file: null });
+        state.editing.item.fields.push({ id: "", label: isEnv ? "" : k.label, kind: k.kind, value: "", filename: null, pending_file: null });
         renderEditFields();
         const inputs = $("edit-fields").querySelectorAll(".label-input");
         inputs[inputs.length - 1]?.select();
@@ -1025,6 +1060,11 @@ const actions = {
   "reveal-field": (el) => revealField(el.dataset.field),
   "copy-field": (el) => copyField(el.dataset.field),
   "copy-reference": (el) => copyReference(el.dataset.ref),
+  "copy-text": async (el) => {
+    await guarded(() => invoke("copy_plain", { text: el.dataset.text }));
+    toast("コマンドをコピーしました");
+  },
+  "open-sponsor": () => guarded(() => invoke("open_url", { url: SPONSOR_URL })),
   "open-url": (el) => guarded(() => invoke("open_url", { url: el.dataset.url })),
   "save-file": async (el) => {
     const path = await guarded(() => invoke("save_field_file", { key: state.view.key, field: el.dataset.field }));
