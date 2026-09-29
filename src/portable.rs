@@ -9,13 +9,21 @@
 //!     salt: base64, payload: base64(nonce || AES-256-GCM ciphertext) }
 //! payload の平文は Entry の JSON 配列。
 //! version を上げる変更をしたら、旧 version の読み込みを必ず残すこと。
+//!
+//! 版の履歴:
+//!   v1 (v0.2): Entry = key / value / binary / 日時
+//!   v2 (v0.3): Entry に format を追加（0 = 生の値、1 = 種類つき項目の JSON）。
+//!              v1 のファイルは format 欠落 = 0 として読める。v0.2 の vlt に v2 を
+//!              渡すと項目 JSON を生の値と誤解するので、版で明示的に弾かせる。
 
 use base64::{engine::general_purpose::STANDARD as B64, Engine};
 use serde::{Deserialize, Serialize};
 
 use crate::crypto;
 
-pub const FORMAT_VERSION: u32 = 1;
+pub const FORMAT_VERSION: u32 = 2;
+/// 読み込める最古の版。
+pub const MIN_FORMAT_VERSION: u32 = 1;
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
 pub struct Entry {
@@ -26,6 +34,9 @@ pub struct Entry {
     pub binary: bool,
     pub created_at: String,
     pub updated_at: String,
+    /// 0 = 生の値、1 = 種類つき項目の JSON（store::FORMAT_*）。v1 のファイルには無い。
+    #[serde(default)]
+    pub format: u8,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -75,10 +86,10 @@ pub fn unseal(data: &[u8], passphrase: &str) -> Result<Vec<Entry>, String> {
     if envelope.format != "vltx" {
         return Err(format!("Not a vltx file (format: {})", envelope.format));
     }
-    if envelope.version != FORMAT_VERSION {
+    if !(MIN_FORMAT_VERSION..=FORMAT_VERSION).contains(&envelope.version) {
         return Err(format!(
-            "Unsupported vltx version {} (this vlt supports {})",
-            envelope.version, FORMAT_VERSION
+            "Unsupported vltx version {} (this vlt supports {}..={})",
+            envelope.version, MIN_FORMAT_VERSION, FORMAT_VERSION
         ));
     }
     if envelope.kdf.algo != "argon2id" {
@@ -125,6 +136,7 @@ mod tests {
                 binary: false,
                 created_at: "2026-07-18 00:00:00".into(),
                 updated_at: "2026-07-18 00:00:00".into(),
+                format: 0,
             },
             Entry {
                 key: "android/hushcam/upload-keystore".into(),
@@ -133,6 +145,7 @@ mod tests {
                 binary: true,
                 created_at: "2026-07-18 00:00:00".into(),
                 updated_at: "2026-07-18 00:00:01".into(),
+                format: 0,
             },
         ]
     }
@@ -167,6 +180,30 @@ mod tests {
         v["version"] = serde_json::json!(999);
         let err = unseal(&serde_json::to_vec(&v).unwrap(), "pw").unwrap_err();
         assert!(err.contains("version"), "unexpected error: {err}");
+    }
+
+    #[test]
+    fn unseal_reads_v1_files_without_format_field() {
+        // v0.2 が書いた .vltx を再現する: version 1、Entry に format が無い
+        let salt = crypto::generate_salt();
+        let key = crypto::derive_key("pw", &salt).unwrap();
+        let v1_entries = br#"[{"key":"k","value":"dg==","binary":false,"created_at":"a","updated_at":"b"}]"#;
+        let payload = crypto::encrypt(&key, v1_entries).unwrap();
+        let envelope = serde_json::json!({
+            "format": "vltx", "version": 1,
+            "kdf": {"algo": "argon2id", "m_cost": crypto::KDF_M_COST_KIB, "t_cost": crypto::KDF_T_COST, "p_cost": crypto::KDF_P_COST},
+            "salt": B64.encode(salt), "payload": B64.encode(payload),
+        });
+        let entries = unseal(&serde_json::to_vec(&envelope).unwrap(), "pw").unwrap();
+        assert_eq!(entries[0].value, b"v");
+        assert_eq!(entries[0].format, 0);
+    }
+
+    #[test]
+    fn sealed_files_are_current_version() {
+        let sealed = seal(&sample_entries(), "pw").unwrap();
+        let v: serde_json::Value = serde_json::from_slice(&sealed).unwrap();
+        assert_eq!(v["version"], serde_json::json!(FORMAT_VERSION));
     }
 
     #[test]
