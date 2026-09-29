@@ -7,120 +7,95 @@
   <link rel="stylesheet" href="app.css" />
 </head>
 <body>
+  <!-- 画面上端の帯でウインドウを動かす。子要素を持たせないこと（子の上ではドラッグが効かない）。 -->
+  <div class="drag-strip" data-tauri-drag-region></div>
+
   <!-- 初期化前: マスターキーが Keychain に無い -->
   <section id="screen-setup" class="screen gate" hidden>
-    <div class="gate-card" data-tauri-drag-region>
-      <div class="gate-icon" aria-hidden="true">
-        <svg viewBox="0 0 64 64"><path d="M20 28v-8a12 12 0 0 1 24 0v8" fill="none" stroke="currentColor" stroke-width="5" stroke-linecap="round"/><rect x="14" y="28" width="36" height="26" rx="5" fill="currentColor"/><circle cx="32" cy="38" r="4" fill="var(--bg)"/><path d="M30 41h4l1.5 8h-7z" fill="var(--bg)"/></svg>
-      </div>
+    <div class="gate-card">
+      <div class="gate-mark" id="setup-mark"></div>
       <h1>vlt をはじめる</h1>
       <p>マスターキーを生成して macOS のキーチェーンに保存します。<br>vault はこの Mac の中だけで復号できます。</p>
-      <button class="primary" data-action="init">vault を作成</button>
+      <button class="btn primary" data-action="init">vault を作成</button>
       <p class="gate-error" id="setup-error" role="alert"></p>
     </div>
   </section>
 
   <!-- ロック中: メモリ上に vault を持っていない -->
   <section id="screen-locked" class="screen gate" hidden>
-    <div class="gate-card" data-tauri-drag-region>
-      <div class="gate-icon" aria-hidden="true">
-        <svg viewBox="0 0 64 64"><path d="M20 28v-8a12 12 0 0 1 24 0v8" fill="none" stroke="currentColor" stroke-width="5" stroke-linecap="round"/><rect x="14" y="28" width="36" height="26" rx="5" fill="currentColor"/><circle cx="32" cy="38" r="4" fill="var(--bg)"/><path d="M30 41h4l1.5 8h-7z" fill="var(--bg)"/></svg>
-      </div>
-      <h1>ロック中</h1>
-      <p>キーチェーンからマスターキーを取り出して解錠します。</p>
-      <button class="primary" data-action="unlock">解錠</button>
+    <div class="gate-card">
+      <div class="gate-mark" id="locked-mark"></div>
+      <h1>vlt はロックされています</h1>
+      <p class="gate-reason" id="lock-reason"></p>
+      <button class="btn primary big" data-action="unlock" id="btn-unlock">解錠</button>
+      <p class="gate-hint" id="unlock-hint"></p>
       <p class="gate-error" id="locked-error" role="alert"></p>
     </div>
   </section>
 
-  <!-- 本体: 左に一覧、右に詳細 -->
+  <!-- 本体: サイドバー / 一覧 / 詳細 -->
   <section id="screen-main" class="screen main" hidden>
     <aside class="sidebar">
-      <div class="sidebar-top" data-tauri-drag-region>
-        <div class="search">
-          <svg viewBox="0 0 20 20" aria-hidden="true"><circle cx="8.5" cy="8.5" r="5.5" fill="none" stroke="currentColor" stroke-width="2"/><path d="M13 13l4 4" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
-          <input id="search" type="search" placeholder="検索" autocomplete="off" spellcheck="false" />
-          <kbd>⌘F</kbd>
-        </div>
-      </div>
-      <nav id="list" class="list" aria-label="シークレット一覧"></nav>
+      <nav id="categories" class="categories" aria-label="分類"></nav>
       <div class="sidebar-bottom">
-        <button class="primary" data-action="new">＋ 新規</button>
-        <div class="menu">
-          <button class="icon-button" data-action="menu" title="その他" aria-label="その他">
-            <svg viewBox="0 0 20 20" aria-hidden="true"><circle cx="4" cy="10" r="2"/><circle cx="10" cy="10" r="2"/><circle cx="16" cy="10" r="2"/></svg>
-          </button>
-          <div id="menu-popup" class="menu-popup" hidden>
-            <button data-action="export">バックアップを書き出す (.vltx)</button>
-            <button data-action="import">バックアップを読み込む</button>
-            <hr>
-            <button data-action="lock">ロック <kbd>⌘L</kbd></button>
-          </div>
-        </div>
+        <button class="icon-btn" data-action="open-generator" title="パスワード生成" aria-label="パスワード生成" id="btn-generator"></button>
+        <button class="icon-btn" data-action="open-settings" title="設定" aria-label="設定" id="btn-settings"></button>
+        <span class="spacer"></span>
+        <button class="icon-btn" data-action="lock" title="ロック ⌘L" aria-label="ロック" id="btn-lock"></button>
       </div>
     </aside>
 
-    <main class="detail">
-      <div class="detail-top" data-tauri-drag-region></div>
-      <div id="detail-empty" class="detail-empty">
-        <p>項目を選ぶか、<button class="link" data-action="new">新規作成</button>してください。</p>
+    <section class="list-pane">
+      <div class="list-head">
+        <div class="search">
+          <span id="search-icon"></span>
+          <input id="search" type="search" placeholder="検索" autocomplete="off" spellcheck="false" />
+          <kbd>⌘F</kbd>
+        </div>
+        <button class="btn primary new-btn" data-action="new" title="新規 ⌘N" id="btn-new">新規</button>
       </div>
-      <article id="detail-item" class="detail-item" hidden>
-        <header class="item-header">
-          <div class="item-badge" id="item-badge" aria-hidden="true"></div>
-          <div class="item-titles">
-            <h2 id="item-name"></h2>
-            <p id="item-namespace" class="muted"></p>
-          </div>
-          <div class="item-actions">
-            <button class="icon-button" data-action="rename" title="名前を変更" aria-label="名前を変更">
-              <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M4 14.5V16h1.5l8.5-8.5-1.5-1.5L4 14.5zM13.5 5l1.5 1.5 1.2-1.2a1 1 0 0 0 0-1.4l-.1-.1a1 1 0 0 0-1.4 0L13.5 5z" fill="currentColor"/></svg>
-            </button>
-            <button class="icon-button danger" data-action="delete" title="削除" aria-label="削除">
-              <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M6 6h8l-.6 9H6.6L6 6zM8 3h4v2H8z" fill="currentColor"/><path d="M4 6h12" stroke="currentColor" stroke-width="1.6"/></svg>
-            </button>
+      <div class="list-title">
+        <h2 id="list-heading"></h2>
+        <span id="list-count" class="muted"></span>
+        <span class="spacer"></span>
+        <button class="btn ghost small" data-action="empty-trash" id="btn-empty-trash" hidden>ゴミ箱を空にする</button>
+      </div>
+      <nav id="list" class="list" aria-label="項目"></nav>
+    </section>
+
+    <main class="detail" id="detail">
+      <div id="detail-empty" class="detail-empty"></div>
+      <article id="detail-item" class="detail-body" hidden></article>
+      <article id="detail-trash" class="detail-body" hidden></article>
+
+      <form id="editor" class="detail-body editor" autocomplete="off" hidden>
+        <header class="editor-head">
+          <span id="edit-badge"></span>
+          <div class="editor-titles">
+            <p class="muted" id="edit-type"></p>
+            <input id="edit-key" class="title-input" placeholder="名前（例: github/login）" spellcheck="false" />
+            <p class="hint">「/」で区切ると名前空間になります。秘密参照は <code id="edit-ref-preview">vlt://…</code></p>
           </div>
         </header>
-
-        <section class="fields">
-          <div class="field" id="field-text">
-            <div class="field-label">値</div>
-            <div class="field-row">
-              <div id="value-box" class="value-box masked" aria-live="polite"><span id="value-text">••••••••••••••••</span></div>
-              <div class="field-buttons">
-                <button class="chip" data-action="reveal" id="btn-reveal">表示</button>
-                <button class="chip accent" data-action="copy" id="btn-copy">コピー</button>
-              </div>
-            </div>
-            <p class="field-hint" id="value-hint">コピーした値は 30 秒後にクリップボードから消えます。</p>
-          </div>
-          <div class="field" id="field-binary" hidden>
-            <div class="field-label">ファイル</div>
-            <div class="field-row">
-              <div class="value-box binary"><span>バイナリ（画面には出しません）</span></div>
-              <div class="field-buttons">
-                <button class="chip accent" data-action="save-file">ファイルへ保存</button>
-              </div>
-            </div>
-          </div>
+        <section class="card" id="edit-fields"></section>
+        <div class="add-field">
+          <button type="button" class="btn ghost small" data-action="add-field" id="btn-add-field">フィールドを追加</button>
+        </div>
+        <section class="card">
+          <label class="field-label" for="edit-notes">メモ</label>
+          <textarea id="edit-notes" rows="4" spellcheck="false"></textarea>
         </section>
-
-        <section class="fields secondary">
-          <div class="field">
-            <div class="field-label">更新</div>
-            <div class="field-row">
-              <div class="field-buttons wrap">
-                <button class="chip" data-action="edit" id="btn-edit">値を書き換える</button>
-                <button class="chip" data-action="replace-file">ファイルから置き換える</button>
-              </div>
-            </div>
-          </div>
-          <dl class="meta">
-            <div><dt>作成</dt><dd id="item-created"></dd></div>
-            <div><dt>更新</dt><dd id="item-updated"></dd></div>
-          </dl>
+        <section class="card">
+          <label class="field-label" for="edit-tags">タグ（カンマ区切り）</label>
+          <input id="edit-tags" spellcheck="false" placeholder="work, dev" />
+          <label class="check"><input type="checkbox" id="edit-favorite"> お気に入り</label>
         </section>
-      </article>
+        <p class="form-error" id="edit-error" role="alert"></p>
+        <footer class="editor-foot">
+          <button type="button" class="btn secondary" data-action="edit-cancel">キャンセル</button>
+          <button type="submit" class="btn primary">保存 <kbd>⌘S</kbd></button>
+        </footer>
+      </form>
     </main>
   </section>
 
@@ -129,14 +104,15 @@
     <form id="modal-form" class="modal-card" autocomplete="off">
       <h3 id="modal-title"></h3>
       <div id="modal-body" class="modal-body"></div>
-      <p id="modal-error" class="modal-error" role="alert"></p>
+      <p id="modal-error" class="form-error" role="alert"></p>
       <div class="modal-buttons">
-        <button type="button" class="secondary" data-action="modal-cancel">キャンセル</button>
-        <button type="submit" class="primary" id="modal-ok">OK</button>
+        <button type="button" class="btn secondary" data-action="modal-cancel" id="modal-cancel">キャンセル</button>
+        <button type="submit" class="btn primary" id="modal-ok">OK</button>
       </div>
     </form>
   </div>
 
+  <div id="popover" class="popover" hidden></div>
   <div id="toast" class="toast" hidden></div>
 
   <script type="module" src="app.js"></script>

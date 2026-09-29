@@ -158,18 +158,39 @@ MIT
 
 Contributions are welcome. Please open an issue first to discuss what you'd like to change.
 
-## Desktop app (GUI)
+## Items, secret references and more (v0.3)
 
-A Tauri 2 desktop app lives in `gui/`, built on the same Rust core. It gives a 1Password-style
-two-pane UI: searchable list grouped by namespace, reveal/copy with auto-conceal (30 s),
-clipboard auto-clear (30 s), new/edit/rename/delete, binary secrets via file dialogs,
-and `.vltx` export/import with a passphrase. Lock (⌘L) drops the vault from memory; unlock
-asks the macOS Keychain for the master key.
+Items have a type modelled on 1Password: login, password, API credential, secure note,
+credit card, identity, SSH key, database, server, software license, Wi-Fi, bank account and
+document. Each type has a primary field, plus custom fields, notes, tags and favorites.
+Old v0.2 entries keep working (text becomes a password item, binary a document).
+
+Secret references work like `op://`:
 
 ```bash
-cd gui
-npm install
-npm run dev      # develop
-npm run verify   # unit + Playwright E2E + cargo test/build
-npm run build    # gui/src-tauri/target/release/bundle/macos/vlt.app (+ .dmg)
+vlt read vlt://github/login/username          # a field by id or label
+vlt read vlt://openai/api-key                 # the primary field
+vlt read 'vlt://github/login?attribute=otp'   # the current one-time password
+vlt inject -i config.tpl -o config.yml        # replaces {{ vlt://... }}
+vlt run --env-file .env -- npm start          # .env values may be vlt:// references
+vlt show github/login                         # fields and their references (masked)
+```
+
+Other commands: `vlt set <key> <value> [--field f] [--type login]`, `vlt get <key> [--field f]`,
+`vlt totp <key>`, `vlt generate`, `vlt types`, `vlt delete` (to the trash), `vlt restore`, `vlt trash`.
+
+## Desktop app (GUI)
+
+`gui/` is a Tauri 2 app on the same Rust core, in the style of 1Password 8: sidebar
+(all / favorites / needs attention / types / tags / trash), searchable list and detail pane.
+
+- Unlock with Touch ID (or your Mac password). Auto-lock after inactivity, on screen lock and on sleep.
+- Values stay hidden until you reveal them. Copies are marked concealed (clipboard managers skip them)
+  and cleared after a delay. Large type, password generator with strength meter, live TOTP codes.
+- "Copy secret reference" on every field. Weak and reused passwords are flagged.
+- ⌘⇧Space brings vlt to the front from anywhere. ⌘C copies the primary field, ⌘⇧C the username.
+
+```bash
+./scripts/install.sh   # builds, signs (skipping revoked certificates) and installs CLI + app
+cd gui && npm run verify
 ```

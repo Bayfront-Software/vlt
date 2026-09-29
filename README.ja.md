@@ -154,18 +154,39 @@ MIT
 
 コントリビュート歓迎です。変更を加える前に、まずissueを開いて議論してください。
 
-## デスクトップアプリ（GUI）
+## 種類つき項目・秘密参照など（v0.3）
 
-`gui/` に Tauri 2 製のデスクトップアプリがあります（Rust コアは CLI と共通）。
-1Password 風の 2 ペイン UI で、名前空間ごとにまとまった検索つき一覧、表示/コピー
-（30 秒で自動的に隠す・クリップボードも 30 秒で自動消去）、新規/編集/改名/削除、
-バイナリのファイル保存/取り込み、パスフレーズ付き `.vltx` の書き出し/読み込みができます。
-ロック（⌘L）はメモリ上の vault を捨て、解錠時に macOS キーチェーンへマスターキーを取りに行きます。
+項目は 1Password を手本にした種類を持ちます（ログイン・パスワード・API 認証情報・セキュアノート・
+クレジットカード・個人情報・SSH 鍵・データベース・サーバー・ソフトウェアライセンス・Wi-Fi・
+銀行口座・書類）。種類ごとの主役フィールドに加え、カスタムフィールド・メモ・タグ・お気に入りを
+持てます。v0.2 の項目はそのまま使えます（テキストはパスワード、バイナリは書類として扱います）。
+
+秘密参照は 1Password の `op://` と同じ感覚で使えます。
 
 ```bash
-cd gui
-npm install
-npm run dev      # 開発
-npm run verify   # 単体 + Playwright E2E + cargo test/build
-npm run build    # gui/src-tauri/target/release/bundle/macos/vlt.app（+ .dmg）
+vlt read vlt://github/login/username          # フィールドを id かラベルで指定
+vlt read vlt://openai/api-key                 # 主役フィールド
+vlt read 'vlt://github/login?attribute=otp'   # ワンタイムパスワードの現在のコード
+vlt inject -i config.tpl -o config.yml        # {{ vlt://... }} を置き換える
+vlt run --env-file .env -- npm start          # .env の値に vlt:// 参照を書ける
+vlt show github/login                         # フィールドと参照の一覧（値は伏せる）
+```
+
+ほかに `vlt set <key> <value> [--field f] [--type login]`、`vlt get <key> [--field f]`、
+`vlt totp <key>`、`vlt generate`、`vlt types`、`vlt delete`（ゴミ箱へ）、`vlt restore`、`vlt trash`。
+
+## デスクトップアプリ（GUI）
+
+`gui/` は Rust コアを共用する Tauri 2 アプリで、1Password 8 風の3列構成です
+（サイドバー：すべて／お気に入り／要確認／種類／タグ／ゴミ箱、検索つき一覧、詳細）。
+
+- Touch ID（または Mac のパスワード）で解錠。無操作・画面ロック・スリープで自動ロック。
+- 値は「表示」を押すまで伏せたまま。コピーは履歴アプリに残らない印付きで、一定時間後に消去。
+  大きく表示、強度つきのパスワード生成、ワンタイムパスワードの表示。
+- 全フィールドに「秘密参照をコピー」。弱い・使い回しのパスワードを検出。
+- ⌘⇧Space でどこからでも呼び出し。⌘C で主役、⌘⇧C でユーザー名をコピー。
+
+```bash
+./scripts/install.sh   # ビルド・署名（失効した証明書は避ける）・CLI とアプリのインストール
+cd gui && npm run verify
 ```

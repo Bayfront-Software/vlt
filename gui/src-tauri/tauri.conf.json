@@ -11,10 +11,10 @@
     "windows": [
       {
         "title": "vlt",
-        "width": 1040,
-        "height": 680,
-        "minWidth": 760,
-        "minHeight": 480,
+        "width": 1180,
+        "height": 760,
+        "minWidth": 820,
+        "minHeight": 520,
         "resizable": true,
         "titleBarStyle": "Overlay",
         "hiddenTitle": true,
@@ -27,7 +27,10 @@
   },
   "bundle": {
     "active": true,
-    "targets": ["app", "dmg"],
+    "targets": [
+      "app",
+      "dmg"
+    ],
     "category": "Utility",
     "shortDescription": "Local secret manager backed by AES-256-GCM and the OS Keychain.",
     "copyright": "Copyright (c) 2026 Bayfront Software",

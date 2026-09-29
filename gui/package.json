@@ -9,7 +9,8 @@
     "check": "tauri build --no-bundle",
     "test": "node --test ui/*.test.mjs && cd src-tauri && cargo test",
     "verify": "npm test && npm run e2e && cd src-tauri && cargo build --release",
-    "e2e": "node e2e/walk.mjs"
+    "e2e": "node e2e/walk.mjs",
+    "install-app": "../scripts/install.sh"
   },
   "devDependencies": {
     "@tauri-apps/cli": "^2.11.4",
