@@ -1,7 +1,12 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
-  "description": "vlt GUI の既定権限。ファイル選択とクリップボードは Rust 側で行うので JS 側の許可は core のみ。",
-  "windows": ["main"],
-  "permissions": ["core:default"]
+  "description": "vlt GUI の既定権限。ファイル選択とクリップボードは Rust 側で行うので JS 側は core とウインドウのドラッグ移動だけ。",
+  "windows": [
+    "main"
+  ],
+  "permissions": [
+    "core:default",
+    "core:window:allow-start-dragging"
+  ]
 }
