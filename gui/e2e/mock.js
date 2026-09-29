@@ -68,7 +68,12 @@ window.__installVltMock = () => {
     copy_secret: ({ text }) => { window.__clipboard = text; return settings.clipboard_clear_secs; },
     copy_plain: ({ text }) => { window.__clipboard = text; },
     open_url: () => {},
-    template_item: ({ itemType }) => ({ item_type: itemType, notes: "", tags: [], favorite: false, fields: (TEMPLATES[itemType] ?? []).map(([id, l, kind]) => ({ id, label: l, kind, value: "", filename: null, pending_file: null })) }),
+    template_item: ({ itemType, options }) => {
+      // ops::new_item と同じく、自分で決めるパスワードの種類だけ生成して入れる
+      const generates = ["login", "password", "server", "database"].includes(itemType);
+      const generated = generates ? commands.generate_password({ options }).password : "";
+      return { item_type: itemType, notes: "", tags: [], favorite: false, fields: (TEMPLATES[itemType] ?? []).map(([id, l, kind]) => ({ id, label: l, kind, value: id === "password" ? generated : "", filename: null, pending_file: null })) };
+    },
     editable_item: ({ key }) => { const it = need(key); return { item_type: it.type, notes: it.notes, tags: [...it.tags], favorite: it.favorite, fields: it.fields.map((x) => ({ id: x.id, label: x.label, kind: x.kind, value: x.kind === "file" ? "" : x.value, filename: x.filename, pending_file: null })) }; },
     pick_file: () => ({ token: "t1", filename: "service-account.json", size: 1234 }),
     save_item: ({ originalKey, key, item }) => {

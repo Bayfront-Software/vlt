@@ -255,9 +255,10 @@ fn open_url(state: State<AppState>, url: String) -> CmdResult<()> {
 
 // ---------- 編集 ----------
 
+/// 新規作成の雛形（生成器の設定で作ったパスワード入り）。
 #[tauri::command]
-fn template_item(item_type: ItemType) -> EditableItem {
-    ops::template(item_type)
+fn template_item(item_type: ItemType, options: GeneratorOptions) -> CmdResult<EditableItem> {
+    ops::new_item(item_type, &options)
 }
 
 #[tauri::command]

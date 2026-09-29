@@ -114,6 +114,11 @@ for (const colorScheme of ["light", "dark"]) {
   await page.waitForSelector("#editor:not([hidden])");
   await page.fill("#edit-key", "dev/stripe");
   check((await page.textContent("#edit-ref-preview")) === "vlt://dev/stripe/<フィールド>", "秘密参照のプレビュー");
+  const prefilled = await page.inputValue("#edit-field-1");
+  check(prefilled.length === 20, "新規ログインにはパスワードが最初から入っている");
+  check(await page.getAttribute("#edit-field-1", "type") === "text", "自動入力したパスワードは見えている");
+  await page.waitForSelector("#edit-fields .strength .bar");
+  await shot("5b-new-login-prefilled");
   await page.fill("#edit-field-0", "ops@example.com");
   await page.click('[data-action="generate-into"][data-index="1"]');
   await page.waitForSelector("#modal:not([hidden]) .generator-out");
@@ -171,6 +176,39 @@ for (const colorScheme of ["light", "dark"]) {
   await page.click('[data-action="restore"]');
   await page.waitForFunction(() => document.querySelector("#detail-item h1")?.textContent === "stripe-live");
   check(!(await page.isHidden("#detail-item")), "元に戻した項目を表示");
+
+  // 列の幅をドラッグで変える → 保存されて再読み込み後も残る → ダブルクリックで戻る
+  const listWidth = () => page.evaluate(() => document.querySelector(".list-pane").getBoundingClientRect().width);
+  const before = await listWidth();
+  const box = await page.locator("#split-list").boundingBox();
+  await page.mouse.move(box.x + box.width / 2, box.y + 300);
+  await page.mouse.down();
+  await page.mouse.move(box.x + box.width / 2 + 90, box.y + 300, { steps: 6 });
+  await page.mouse.up();
+  const widened = await listWidth();
+  check(Math.abs(widened - before - 90) <= 2, `一覧の幅がドラッグで変わる (${before}→${widened})`);
+  const sbox = await page.locator("#split-sidebar").boundingBox();
+  await page.mouse.move(sbox.x + sbox.width / 2, sbox.y + 300);
+  await page.mouse.down();
+  await page.mouse.move(sbox.x + sbox.width / 2 - 500, sbox.y + 300, { steps: 6 });
+  await page.mouse.up();
+  const sidebarWidth = await page.evaluate(() => document.querySelector(".sidebar").getBoundingClientRect().width);
+  check(Math.abs(sidebarWidth - 160) <= 1, `サイドバーは下限で止まる (${sidebarWidth})`);
+  await shot("8b-resized");
+  await page.reload();
+  await page.waitForSelector("#screen-main:not([hidden])");
+  check(Math.abs((await listWidth()) - widened) <= 2, "列の幅は再起動後も残る");
+  await page.dblclick("#split-list");
+  check(Math.abs((await listWidth()) - 300) <= 1, "ダブルクリックで既定の幅に戻る");
+  await page.focus("#split-list");
+  await page.keyboard.press("ArrowRight");
+  check(Math.abs((await listWidth()) - 316) <= 1, "← → キーでも動かせる");
+  await page.setViewportSize({ width: 860, height: 760 });
+  const detailWidth = await page.evaluate(() => document.querySelector(".detail").getBoundingClientRect().width);
+  check(detailWidth >= 360 - 1, `狭い窓でも詳細欄は最低幅を保つ (${detailWidth})`);
+  await page.setViewportSize({ width: 1180, height: 760 });
+  await page.dblclick("#split-list");
+  await page.dblclick("#split-sidebar");
 
   // 設定 → 保存
   await page.click('[data-action="open-settings"]');

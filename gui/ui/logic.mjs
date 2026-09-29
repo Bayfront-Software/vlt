@@ -223,3 +223,46 @@ export function shortcutCopyField(view, shift) {
   }
   return null;
 }
+
+// ---------- 3 列の幅 ----------
+
+export const PANE_LIMITS = {
+  sidebar: { min: 160, max: 320 },
+  list: { min: 220, max: 520 },
+  /** 詳細欄に最低限残す幅。 */
+  detailMin: 360,
+};
+export const PANE_DEFAULTS = { sidebar: 208, list: 300 };
+
+const clamp = (v, { min, max }) => Math.min(max, Math.max(min, v));
+
+/**
+ * 各列を上下限に収め、詳細欄が detailMin を下回るなら一覧 → サイドバーの順に詰める。
+ * 下限より細くはしない（窓がそれより狭いときは窓の最小幅で守る）。
+ */
+export function clampPaneWidths({ sidebar, list }, windowWidth) {
+  let s = clamp(sidebar, PANE_LIMITS.sidebar);
+  let l = clamp(list, PANE_LIMITS.list);
+  let overflow = s + l + PANE_LIMITS.detailMin - windowWidth;
+  if (overflow > 0) {
+    const fromList = Math.min(overflow, l - PANE_LIMITS.list.min);
+    l -= fromList;
+    overflow -= fromList;
+  }
+  if (overflow > 0) {
+    s -= Math.min(overflow, s - PANE_LIMITS.sidebar.min);
+  }
+  return { sidebar: s, list: l };
+}
+
+/** localStorage に保存した幅を読む。壊れた値は項目ごとに既定値へ戻す。 */
+export function parsePaneWidths(raw) {
+  let saved = null;
+  try {
+    saved = JSON.parse(raw ?? "null");
+  } catch {
+    saved = null;
+  }
+  const pick = (k) => (saved && Number.isFinite(saved[k]) ? saved[k] : PANE_DEFAULTS[k]);
+  return { sidebar: pick("sidebar"), list: pick("list") };
+}

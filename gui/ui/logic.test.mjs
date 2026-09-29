@@ -170,3 +170,23 @@ test("shortcutCopyField は ⌘C で主役、⌘⇧C でユーザー名を選ぶ
   assert.equal(L.shortcutCopyField({ primary_field: "file", fields: [{ id: "file", has_value: true, kind: "file" }] }, false), null);
   assert.equal(L.shortcutCopyField(null, false), null);
 });
+
+test("clampPaneWidths は各列を上下限に収め、詳細欄の最低幅を残す", () => {
+  const { sidebar, list } = L.PANE_LIMITS;
+  assert.deepEqual(L.clampPaneWidths({ sidebar: 10, list: 10 }, 1400), { sidebar: sidebar.min, list: list.min });
+  assert.deepEqual(L.clampPaneWidths({ sidebar: 9999, list: 9999 }, 3000), { sidebar: sidebar.max, list: list.max });
+  // 狭い窓では一覧から詰め、足りなければサイドバーも詰める
+  const narrow = L.clampPaneWidths({ sidebar: 300, list: 500 }, 1000);
+  assert.equal(narrow.sidebar + narrow.list + L.PANE_LIMITS.detailMin, 1000);
+  assert.equal(narrow.sidebar, 300 - Math.max(0, 300 + list.min + L.PANE_LIMITS.detailMin - 1000));
+  const tiny = L.clampPaneWidths({ sidebar: 300, list: 500 }, 700);
+  assert.deepEqual(tiny, { sidebar: sidebar.min, list: list.min }, "下限より小さくはしない");
+  assert.deepEqual(L.clampPaneWidths(L.PANE_DEFAULTS, 1180), L.PANE_DEFAULTS, "既定値はそのまま");
+});
+
+test("parsePaneWidths は壊れた保存値を既定値に戻す", () => {
+  assert.deepEqual(L.parsePaneWidths(null), L.PANE_DEFAULTS);
+  assert.deepEqual(L.parsePaneWidths("{bad"), L.PANE_DEFAULTS);
+  assert.deepEqual(L.parsePaneWidths('{"sidebar":"x","list":250}'), { ...L.PANE_DEFAULTS, list: 250 });
+  assert.deepEqual(L.parsePaneWidths('{"sidebar":180,"list":260}'), { sidebar: 180, list: 260 });
+});

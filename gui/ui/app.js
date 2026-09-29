@@ -10,6 +10,10 @@ const $ = (id) => document.getElementById(id);
 
 /** 表示した値を自動で隠すまでの秒数。 */
 const REVEAL_SECS = 30;
+const PANE_STORAGE_KEY = "vlt.panes";
+/** ← → キーで仕切りを動かす量。 */
+const PANE_KEY_STEP = 16;
+
 /** 画面の操作を自動ロックのタイマーへ伝える間隔（毎回送らない）。 */
 const TOUCH_THROTTLE_MS = 15000;
 
@@ -45,6 +49,8 @@ const state = {
   autoUnlockTried: false,
   lastTouch: 0,
   toastTimer: null,
+  /** 利用者が選んだ列幅（窓が狭いときは詰めて表示するが、広げたらこの幅に戻す）。 */
+  panePref: { ...L.PANE_DEFAULTS },
 };
 
 // ---------- DOM ヘルパ ----------
@@ -454,6 +460,10 @@ function startOtp() {
 async function startEdit(originalKey, item) {
   const snapshot = structuredClone({ key: originalKey ?? "", item });
   state.editing = { originalKey, key: originalKey ?? "", item: structuredClone(item), snapshot, shown: new Set() };
+  if (!originalKey) {
+    // 新規作成で自動入力したパスワードは、何が入ったか分かるように最初から見せる。
+    item.fields.forEach((f, i) => { if (f.kind === "concealed" && f.value) state.editing.shown.add(i); });
+  }
   stopOtp();
   await renderDetail();
   renderEditor();
@@ -651,7 +661,10 @@ function typePickerDialog() {
         grid.append(h("button", { type: "button", class: "type-choice", onclick: async () => {
           modalCancel = null;
           closeModal();
-          const template = await invoke("template_item", { itemType: t.id });
+          // PIN モードは数字だけになるので、新規作成の自動入力では使わない。
+          const options = { ...loadGeneratorOptions(), pin: false };
+          const template = await guarded(() => invoke("template_item", { itemType: t.id, options }));
+          if (!template) return;
           state.selectedKey = null;
           if (state.category === "trash") state.category = "all";
           renderCategories();
@@ -1209,6 +1222,72 @@ $("btn-settings").innerHTML = icon("gear");
 $("btn-lock").innerHTML = icon("lock");
 $("btn-new").prepend(fromHtml(icon("plus", { size: 14, strokeWidth: 2 })));
 $("btn-add-field").prepend(fromHtml(icon("plus", { size: 14, strokeWidth: 2 })));
+
+// ---------- 列幅 ----------
+
+function applyPaneWidths(preferred) {
+  const widths = L.clampPaneWidths(preferred, window.innerWidth);
+  const root = document.documentElement.style;
+  root.setProperty("--sidebar-w", `${widths.sidebar}px`);
+  root.setProperty("--list-w", `${widths.list}px`);
+  return widths;
+}
+
+function savePaneWidths() {
+  try { localStorage.setItem(PANE_STORAGE_KEY, JSON.stringify(state.panePref)); } catch { /* 保存できなくても動く */ }
+}
+
+function loadPaneWidths() {
+  let raw = null;
+  try { raw = localStorage.getItem(PANE_STORAGE_KEY); } catch { /* 既定値で動く */ }
+  state.panePref = L.parsePaneWidths(raw);
+  applyPaneWidths(state.panePref);
+}
+
+for (const splitter of document.querySelectorAll(".splitter")) {
+  const pane = splitter.dataset.pane;
+  splitter.addEventListener("pointerdown", (ev) => {
+    ev.preventDefault();
+    splitter.setPointerCapture(ev.pointerId);
+    splitter.classList.add("active");
+    document.body.classList.add("resizing");
+    // 窓が狭くて詰めて表示している場合も、見えている幅から動かし始める。
+    const start = { x: ev.clientX, widths: applyPaneWidths(state.panePref) };
+    const onMove = (e) => {
+      state.panePref = { ...start.widths, [pane]: start.widths[pane] + (e.clientX - start.x) };
+      state.panePref = applyPaneWidths(state.panePref);
+    };
+    const onUp = () => {
+      splitter.releasePointerCapture(ev.pointerId);
+      splitter.classList.remove("active");
+      document.body.classList.remove("resizing");
+      splitter.removeEventListener("pointermove", onMove);
+      splitter.removeEventListener("pointerup", onUp);
+      splitter.removeEventListener("pointercancel", onUp);
+      savePaneWidths();
+    };
+    splitter.addEventListener("pointermove", onMove);
+    splitter.addEventListener("pointerup", onUp);
+    splitter.addEventListener("pointercancel", onUp);
+  });
+  splitter.addEventListener("dblclick", () => {
+    state.panePref = { ...state.panePref, [pane]: L.PANE_DEFAULTS[pane] };
+    state.panePref = applyPaneWidths(state.panePref);
+    savePaneWidths();
+  });
+  splitter.addEventListener("keydown", (ev) => {
+    if (ev.key !== "ArrowLeft" && ev.key !== "ArrowRight") return;
+    ev.preventDefault();
+    ev.stopPropagation();
+    const delta = ev.key === "ArrowRight" ? PANE_KEY_STEP : -PANE_KEY_STEP;
+    const current = applyPaneWidths(state.panePref);
+    state.panePref = applyPaneWidths({ ...current, [pane]: current[pane] + delta });
+    savePaneWidths();
+  });
+}
+
+window.addEventListener("resize", () => applyPaneWidths(state.panePref));
+loadPaneWidths();
 
 refreshStatus().catch((e) => {
   showScreen("locked");

@@ -9,7 +9,7 @@
 use std::collections::{HashMap, HashSet};
 
 use serde::{Deserialize, Serialize};
-use vlt::generator::{self, Strength};
+use vlt::generator::{self, GeneratorOptions, Strength};
 use vlt::item::{Field, FieldKind, Item, ItemType, NOTES_FIELD};
 use vlt::portable::{self, Entry};
 use vlt::reference;
@@ -274,8 +274,22 @@ pub fn editable(store: &SecretStore, key: &str) -> Result<EditableItem, String> 
     Ok(to_editable(&store.get_item(key)?))
 }
 
-pub fn template(item_type: ItemType) -> EditableItem {
-    to_editable(&Item::new(item_type))
+/// 新規作成の雛形。自分で決めるパスワードの種類には、生成したパスワードを最初から入れておく
+/// （1Password と同じ。空のまま保存して弱い値を手で打つ、という流れを減らす）。
+/// Wi-Fi・カード・銀行・API などは相手から渡される値なので入れない。
+pub fn new_item(item_type: ItemType, options: &GeneratorOptions) -> Result<EditableItem, String> {
+    let mut item = to_editable(&Item::new(item_type));
+    let generates = matches!(
+        item_type,
+        ItemType::Login | ItemType::Password | ItemType::Server | ItemType::Database
+    );
+    if generates {
+        let password = generator::generate(options)?;
+        if let Some(field) = item.fields.iter_mut().find(|f| f.id == "password") {
+            field.value = password;
+        }
+    }
+    Ok(item)
 }
 
 pub fn validate_key(key: &str) -> Result<(), String> {
@@ -495,6 +509,10 @@ mod tests {
         }
     }
 
+    fn template(item_type: ItemType) -> EditableItem {
+        to_editable(&Item::new(item_type))
+    }
+
     fn login(username: &str, password: &str) -> EditableItem {
         let mut e = template(ItemType::Login);
         e.fields.iter_mut().find(|f| f.id == "username").unwrap().value = username.into();
@@ -624,6 +642,35 @@ mod tests {
         let e = editable(&store, "b").unwrap();
         assert!(save(&store, Some("b"), "a", &e, &mut PendingFiles::new()).is_err(), "改名先が既存");
         assert!(save(&store, None, "doc", &template(ItemType::Document), &mut PendingFiles::new()).is_err());
+    }
+
+    #[test]
+    fn new_login_and_password_items_come_with_a_generated_password() {
+        let options = GeneratorOptions { length: 24, ..GeneratorOptions::default() };
+        for t in [ItemType::Login, ItemType::Password, ItemType::Server, ItemType::Database] {
+            let item = new_item(t, &options).unwrap();
+            let pw = &item.fields.iter().find(|f| f.id == "password").unwrap().value;
+            assert_eq!(pw.chars().count(), 24, "{t:?}");
+        }
+        let a = new_item(ItemType::Login, &options).unwrap();
+        let b = new_item(ItemType::Login, &options).unwrap();
+        assert_ne!(a.fields[1].value, b.fields[1].value, "毎回ちがう値");
+    }
+
+    #[test]
+    fn new_items_whose_password_is_given_by_others_stay_empty() {
+        // Wi-Fi・カード・銀行などは相手から渡される値なので、勝手に作らない
+        let options = GeneratorOptions::default();
+        for t in [ItemType::Wifi, ItemType::CreditCard, ItemType::BankAccount, ItemType::ApiCredential, ItemType::SecureNote] {
+            let item = new_item(t, &options).unwrap();
+            assert!(item.fields.iter().all(|f| f.value.is_empty()), "{t:?}");
+        }
+    }
+
+    #[test]
+    fn new_item_rejects_invalid_generator_options() {
+        let options = GeneratorOptions { length: 2, ..GeneratorOptions::default() };
+        assert!(new_item(ItemType::Login, &options).is_err());
     }
 
     #[test]
