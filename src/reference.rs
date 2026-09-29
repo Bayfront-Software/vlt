@@ -12,7 +12,8 @@
 
 use std::collections::HashMap;
 
-use crate::item::{FieldKind, Item, PrimaryValue, NOTES_FIELD};
+use crate::env::{expand_vars, is_env_name};
+use crate::item::{FieldKind, Item, ItemType, PrimaryValue, NOTES_FIELD};
 use crate::store::SecretStore;
 use crate::totp;
 
@@ -98,16 +99,35 @@ fn otp_code(item: &Item, field_name: Option<&str>) -> Result<String, String> {
     Ok(totp::current_code(&field.value)?.code)
 }
 
+/// 解決した値と、それが秘密か（`vlt run` の出力で伏せ字にするか）。
+#[derive(Debug, Clone, PartialEq)]
+pub struct Resolved {
+    pub value: String,
+    pub secret: bool,
+}
+
 pub fn resolve(store: &SecretStore, reference: &Reference) -> Result<String, String> {
+    Ok(resolve_detailed(store, reference)?.value)
+}
+
+pub fn resolve_detailed(store: &SecretStore, reference: &Reference) -> Result<Resolved, String> {
     let otp = wants_otp(reference)?;
     let (key, field_name) = locate(store, &reference.path)?;
     let item = store.get_item(key)?;
     if otp {
-        return otp_code(&item, field_name);
+        return Ok(Resolved { value: otp_code(&item, field_name)?, secret: true });
     }
     match field_name {
         None => match item.primary() {
-            Some(PrimaryValue::Text(text)) => Ok(text.to_string()),
+            Some(PrimaryValue::Text(text)) => {
+                // 主役がメモ欄（セキュアノート）なら秘密として扱う
+                let secret = item
+                    .item_type
+                    .primary_field()
+                    .and_then(|id| item.field(id))
+                    .map_or(true, |f| f.kind.is_secret());
+                Ok(Resolved { value: text.to_string(), secret })
+            }
             Some(PrimaryValue::File(_)) => Err(format!(
                 "{key} はファイルなので参照では渡せません。`vlt get {key} --out <path>` を使ってください"
             )),
@@ -122,10 +142,10 @@ pub fn resolve(store: &SecretStore, reference: &Reference) -> Result<String, Str
                 if field.kind == FieldKind::File {
                     return Err(format!("{key}/{name} はファイルなので参照では渡せません"));
                 }
-                return Ok(field.value.clone());
+                return Ok(Resolved { value: field.value.clone(), secret: field.kind.is_secret() });
             }
             if name == NOTES_FIELD {
-                return Ok(item.notes.clone());
+                return Ok(Resolved { value: item.notes.clone(), secret: false });
             }
             Err(format!(
                 "{key} にフィールド {name} がありません（{}）",
@@ -141,13 +161,93 @@ fn available_fields(item: &Item) -> String {
     format!("使えるフィールド: {}", ids.join(", "))
 }
 
-/// 値が参照なら解決し、そうでなければそのまま返す。
-pub fn resolve_value(store: &SecretStore, value: &str) -> Result<String, String> {
+fn process_env(name: &str) -> Option<String> {
+    std::env::var(name).ok()
+}
+
+/// 参照の中の `${VAR}` を展開してから読む。参照でない文字列には触れない。
+fn parse_expanded(value: &str, lookup: &dyn Fn(&str) -> Option<String>) -> Result<Reference, String> {
+    parse(&expand_vars(value, lookup)?)
+}
+
+/// 値が参照なら解決し、そうでなければそのまま返す（`${VAR}` は `lookup` で展開）。
+pub fn resolve_value_with(
+    store: &SecretStore,
+    value: &str,
+    lookup: &dyn Fn(&str) -> Option<String>,
+) -> Result<String, String> {
     if is_reference(value) {
-        resolve(store, &parse(value)?)
+        resolve(store, &parse_expanded(value, lookup)?)
     } else {
         Ok(value.to_string())
     }
+}
+
+/// 値が参照なら解決する（`${VAR}` はこのプロセスの環境変数で展開）。
+pub fn resolve_value(store: &SecretStore, value: &str) -> Result<String, String> {
+    resolve_value_with(store, value, &process_env)
+}
+
+/// `vlt run` / `vlt env` に渡す1つの環境変数。
+#[derive(Debug, Clone, PartialEq)]
+pub struct EnvVar {
+    pub name: String,
+    pub value: String,
+    /// 出力で伏せ字にする値か。
+    pub secret: bool,
+    /// vlt が値を与えた（参照を解決した・環境変数の項目から来た）か。`vlt env` はこれだけを出す。
+    pub from_vlt: bool,
+}
+
+fn upsert(vars: &mut Vec<EnvVar>, var: EnvVar) {
+    vars.retain(|v| v.name != var.name);
+    vars.push(var);
+}
+
+/// 注入する環境を組み立てる。
+/// 1. `base`（このプロセスの環境変数と .env ファイル。後ろが勝つ）
+/// 2. `env_items` の環境変数の項目（後ろが勝つ）
+/// 3. 値が `vlt://` の参照なら解決する。参照の中の `${VAR}` は 1〜2 の値（解決前）で展開する。
+pub fn build_env(
+    store: &SecretStore,
+    base: Vec<(String, String)>,
+    env_items: &[String],
+) -> Result<Vec<EnvVar>, String> {
+    let mut vars: Vec<EnvVar> = Vec::new();
+    for (name, value) in base {
+        upsert(&mut vars, EnvVar { name, value, secret: false, from_vlt: false });
+    }
+    for key in env_items {
+        let item = store.get_item(key)?;
+        if item.item_type != ItemType::Environment {
+            return Err(format!(
+                "{key} は環境変数の項目ではありません（種類: {}）",
+                item.item_type.label()
+            ));
+        }
+        for field in &item.fields {
+            if !is_env_name(&field.label) {
+                return Err(format!("{key} の「{}」は環境変数名として使えません（英字か _ で始まり、英数字と _ だけ）", field.label));
+            }
+            if field.kind == FieldKind::File {
+                return Err(format!("{key} の {} はファイルなので環境変数にできません", field.label));
+            }
+            upsert(
+                &mut vars,
+                EnvVar { name: field.label.clone(), value: field.value.clone(), secret: field.kind.is_secret(), from_vlt: true },
+            );
+        }
+    }
+    let snapshot: HashMap<String, String> = vars.iter().map(|v| (v.name.clone(), v.value.clone())).collect();
+    let lookup = |name: &str| snapshot.get(name).cloned();
+    for var in vars.iter_mut().filter(|v| is_reference(&v.value)) {
+        let reference = parse_expanded(&var.value, &lookup).map_err(|e| format!("{}: {e}", var.name))?;
+        let resolved = resolve_detailed(store, &reference).map_err(|e| format!("{}: {e}", var.name))?;
+        var.value = resolved.value;
+        var.secret |= resolved.secret;
+        var.from_vlt = true;
+    }
+    Ok(vars)
 }
 
 /// 環境変数のうち値が参照のものだけを解決した対応表を返す。
@@ -155,19 +255,24 @@ pub fn resolve_env(
     store: &SecretStore,
     vars: impl IntoIterator<Item = (String, String)>,
 ) -> Result<HashMap<String, String>, String> {
-    let mut resolved = HashMap::new();
-    for (name, value) in vars {
-        if is_reference(&value) {
-            let secret = resolve(store, &parse(&value)?).map_err(|e| format!("{name}: {e}"))?;
-            resolved.insert(name, secret);
-        }
-    }
-    Ok(resolved)
+    Ok(build_env(store, vars.into_iter().collect(), &[])?
+        .into_iter()
+        .filter(|v| v.from_vlt)
+        .map(|v| (v.name, v.value))
+        .collect())
 }
 
 /// テンプレート中の `{{ vlt://... }}` を値に置き換える（1Password の `op inject`）。
 /// `vlt://` で始まらない `{{ ... }}` は他のテンプレートエンジン用とみなして触らない。
 pub fn inject(store: &SecretStore, template: &str) -> Result<String, String> {
+    inject_with(store, template, &process_env)
+}
+
+pub fn inject_with(
+    store: &SecretStore,
+    template: &str,
+    lookup: &dyn Fn(&str) -> Option<String>,
+) -> Result<String, String> {
     let mut out = String::with_capacity(template.len());
     let mut rest = template;
     while let Some(start) = rest.find("{{") {
@@ -175,7 +280,7 @@ pub fn inject(store: &SecretStore, template: &str) -> Result<String, String> {
         let inner = rest[start + 2..start + 2 + len].trim();
         out.push_str(&rest[..start]);
         if is_reference(inner) {
-            out.push_str(&resolve(store, &parse(inner)?)?);
+            out.push_str(&resolve(store, &parse_expanded(inner, lookup)?)?);
         } else {
             out.push_str(&rest[start..start + 2 + len + 2]);
         }
@@ -219,7 +324,7 @@ pub fn parse_env_file(text: &str) -> Result<Vec<(String, String)>, String> {
 mod tests {
     use super::*;
     use crate::crypto::generate_master_key;
-    use crate::item::{Field, ItemType};
+    use crate::item::Field;
     use std::path::PathBuf;
 
     struct TempDb(PathBuf);
@@ -354,6 +459,93 @@ mod tests {
         );
         assert!(parse_env_file("NOEQUALS").is_err());
         assert!(parse_env_file("BAD NAME=1").is_err());
+    }
+
+    #[test]
+    fn resolve_detailed_reports_whether_the_value_is_secret() {
+        let (_db, store) = fixture("detailed");
+        let d = |s: &str| resolve_detailed(&store, &parse(s).unwrap()).unwrap();
+        assert!(d("vlt://dev/github").secret);
+        assert!(!d("vlt://dev/github/username").secret);
+        assert!(d("vlt://dev/github/recovery code").secret);
+        assert!(d("vlt://dev/github?attribute=otp").secret);
+        assert!(!d("vlt://dev/github/notes").secret);
+    }
+
+    #[test]
+    fn references_expand_env_vars_before_resolving() {
+        let (_db, store) = fixture("expand");
+        store.set("db/prod/password", "prod-pw").unwrap();
+        store.set("db/dev/password", "dev-pw").unwrap();
+        let lookup = |n: &str| (n == "APP_ENV").then(|| "prod".to_string());
+        assert_eq!(resolve_value_with(&store, "vlt://db/${APP_ENV}/password", &lookup).unwrap(), "prod-pw");
+        assert_eq!(resolve_value_with(&store, "vlt://db/${STAGE:-dev}/password", &lookup).unwrap(), "dev-pw");
+        let out = inject_with(&store, "pw={{ vlt://db/${APP_ENV}/password }}", &lookup).unwrap();
+        assert_eq!(out, "pw=prod-pw");
+        assert!(resolve_value_with(&store, "vlt://db/${NOPE}/password", &lookup).is_err());
+        // 参照でない文字列の ${} には触れない
+        assert_eq!(resolve_value_with(&store, "${HOME}/x", &lookup).unwrap(), "${HOME}/x");
+    }
+
+    fn env_item(store: &SecretStore, key: &str, vars: &[(&str, &str, FieldKind)]) {
+        let mut item = Item::new(ItemType::Environment);
+        for (name, value, kind) in vars {
+            let id = item.unique_field_id(name);
+            item.fields.push(Field { value: value.to_string(), ..Field::new(&id, name, *kind) });
+        }
+        store.put_item(key, &item).unwrap();
+    }
+
+    fn find<'a>(vars: &'a [EnvVar], name: &str) -> &'a EnvVar {
+        vars.iter().find(|v| v.name == name).unwrap_or_else(|| panic!("{name} が無い"))
+    }
+
+    #[test]
+    fn build_env_merges_base_env_items_and_resolves_references() {
+        let (_db, store) = fixture("build-env");
+        env_item(&store, "envs/app", &[
+            ("DATABASE_URL", "postgres://u:p@db/app", FieldKind::Concealed),
+            ("PORT", "5432", FieldKind::Text),
+            ("GH_USER", "vlt://dev/github/username", FieldKind::Text),
+            ("GH_TOKEN", "vlt://dev/github", FieldKind::Text),
+        ]);
+        let base = vec![
+            ("HOME".to_string(), "/Users/x".to_string()),
+            ("PORT".to_string(), "80".to_string()),
+            ("LEGACY".to_string(), "vlt://dev/legacy-token".to_string()),
+        ];
+        let vars = build_env(&store, base, &["envs/app".to_string()]).unwrap();
+        assert_eq!(find(&vars, "HOME").value, "/Users/x");
+        assert!(!find(&vars, "HOME").from_vlt);
+        assert_eq!(find(&vars, "PORT").value, "5432", "項目の値が後勝ち");
+        assert!(!find(&vars, "PORT").secret);
+        assert!(find(&vars, "DATABASE_URL").secret, "伏せる種類の欄は秘密");
+        assert_eq!(find(&vars, "GH_USER").value, "alice");
+        assert!(!find(&vars, "GH_USER").secret, "参照先がユーザー名なら秘密ではない");
+        assert_eq!(find(&vars, "GH_TOKEN").value, "pw");
+        assert!(find(&vars, "GH_TOKEN").secret, "参照先がパスワードなら秘密");
+        assert_eq!(find(&vars, "LEGACY").value, "tok");
+        assert!(find(&vars, "LEGACY").from_vlt);
+        assert_eq!(vars.iter().filter(|v| v.name == "PORT").count(), 1, "同名は1つにまとめる");
+    }
+
+    #[test]
+    fn build_env_expands_vars_using_earlier_definitions() {
+        let (_db, store) = fixture("build-env-expand");
+        store.set("db/staging/password", "stg").unwrap();
+        env_item(&store, "envs/db", &[("DB_PASSWORD", "vlt://db/${APP_ENV}/password", FieldKind::Text)]);
+        let base = vec![("APP_ENV".to_string(), "staging".to_string())];
+        let vars = build_env(&store, base, &["envs/db".to_string()]).unwrap();
+        assert_eq!(find(&vars, "DB_PASSWORD").value, "stg");
+    }
+
+    #[test]
+    fn build_env_rejects_non_environment_items_and_bad_names() {
+        let (_db, store) = fixture("build-env-bad");
+        assert!(build_env(&store, vec![], &["dev/github".to_string()]).unwrap_err().contains("環境変数"));
+        env_item(&store, "envs/bad", &[("NOT-VALID", "x", FieldKind::Text)]);
+        assert!(build_env(&store, vec![], &["envs/bad".to_string()]).unwrap_err().contains("NOT-VALID"));
+        assert!(build_env(&store, vec![], &["envs/missing".to_string()]).is_err());
     }
 
     #[test]

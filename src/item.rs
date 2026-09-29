@@ -26,6 +26,9 @@ pub enum ItemType {
     Wifi,
     BankAccount,
     Document,
+    /// 環境変数の組（1Password Environments / envchain / Doppler 相当）。
+    /// フィールドのラベルが変数名になり、`vlt run --env <key>` でまとめて注入する。
+    Environment,
 }
 
 #[derive(Serialize, Deserialize, Clone, Copy, Debug, PartialEq, Eq)]
@@ -118,7 +121,7 @@ pub enum PrimaryValue<'a> {
 pub const NOTES_FIELD: &str = "notes";
 
 impl ItemType {
-    pub const ALL: [ItemType; 13] = [
+    pub const ALL: [ItemType; 14] = [
         Self::Login,
         Self::Password,
         Self::ApiCredential,
@@ -132,6 +135,7 @@ impl ItemType {
         Self::Wifi,
         Self::BankAccount,
         Self::Document,
+        Self::Environment,
     ];
 
     pub fn as_str(self) -> &'static str {
@@ -149,6 +153,7 @@ impl ItemType {
             Self::Wifi => "wifi",
             Self::BankAccount => "bank_account",
             Self::Document => "document",
+            Self::Environment => "environment",
         }
     }
 
@@ -171,6 +176,7 @@ impl ItemType {
             Self::Wifi => "Wi-Fi",
             Self::BankAccount => "銀行口座",
             Self::Document => "書類",
+            Self::Environment => "環境変数",
         }
     }
 
@@ -185,7 +191,7 @@ impl ItemType {
             Self::SoftwareLicense => Some("license_key"),
             Self::BankAccount => Some("account_number"),
             Self::Document => Some("file"),
-            Self::SecureNote | Self::Identity => None,
+            Self::SecureNote | Self::Identity | Self::Environment => None,
         }
     }
 
@@ -267,6 +273,7 @@ impl ItemType {
                 f("holder", "名義", Text),
                 f("pin", "暗証番号", Concealed),
             ],
+            Self::Environment => vec![],
             Self::Document => vec![Field {
                 filename: Some(String::new()),
                 ..f("file", "ファイル", File)
@@ -366,6 +373,9 @@ impl Item {
 
     /// 一覧の2行目に出す、伏せる必要のない代表値（ユーザー名など）。
     pub fn subtitle(&self) -> String {
+        if self.item_type == ItemType::Environment {
+            return format!("{} 個の変数", self.fields.len());
+        }
         const PREFERRED: [&str; 7] = ["username", "ssid", "cardholder", "email", "server", "url", "bank_name"];
         for id in PREFERRED {
             if let Some(field) = self.field(id) {
@@ -434,6 +444,17 @@ mod tests {
             assert_eq!(ids.len(), sorted.len(), "{t:?} の id が重複");
             assert!(!ids.iter().any(|id| id == NOTES_FIELD));
         }
+    }
+
+    #[test]
+    fn environment_item_has_no_template_and_no_primary() {
+        let mut env = Item::new(ItemType::Environment);
+        assert!(env.fields.is_empty());
+        assert!(env.primary().is_none());
+        assert_eq!(ItemType::parse("environment"), Some(ItemType::Environment));
+        env.fields.push(Field::new("a", "A", FieldKind::Concealed));
+        env.fields.push(Field::new("b", "B", FieldKind::Text));
+        assert_eq!(env.subtitle(), "2 個の変数");
     }
 
     #[test]

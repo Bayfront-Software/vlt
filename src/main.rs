@@ -6,7 +6,7 @@ use std::process::Command;
 use vlt::generator::{self, GeneratorOptions};
 use vlt::item::{Field, FieldKind, Item, ItemType, NOTES_FIELD};
 use vlt::store::SecretStore;
-use vlt::{crypto, keychain, portable, reference, totp};
+use vlt::{crypto, env as envname, keychain, portable, reference, runner, totp};
 
 #[derive(Parser)]
 #[command(name = "vlt", version, about = "Lightweight secret manager for AI developers")]
@@ -58,6 +58,9 @@ enum Commands {
         /// Do not print a trailing newline
         #[arg(short = 'n', long)]
         no_newline: bool,
+        /// Write the value to a file (mode 600) instead of stdout
+        #[arg(short, long)]
+        out: Option<PathBuf>,
     },
 
     /// Replace {{ vlt://... }} placeholders in a template
@@ -76,6 +79,9 @@ enum Commands {
         /// Print concealed values instead of ********
         #[arg(long)]
         reveal: bool,
+        /// Machine-readable output (concealed values are null unless --reveal)
+        #[arg(long)]
+        json: bool,
     },
 
     /// Print the current one-time password of an item
@@ -118,23 +124,44 @@ enum Commands {
 
     /// List all items (keys only)
     #[command(alias = "ls")]
-    List,
+    List {
+        /// Machine-readable output
+        #[arg(long)]
+        json: bool,
+    },
 
-    /// Run a command with vlt:// references in env vars resolved
+    /// Run a command with secrets injected as env vars.
+    /// Secret values in the command's output are replaced with <concealed by vlt>
+    /// when the output is not a terminal (logs, CI, AI agents).
     Run {
         /// Load variables from a .env file (values may be vlt:// references)
         #[arg(long = "env-file")]
         env_files: Vec<PathBuf>,
+        /// Inject every variable of an environment item (see `vlt types`)
+        #[arg(long = "env")]
+        env_items: Vec<String>,
+        /// Mask secrets even when the output is a terminal (breaks interactive programs)
+        #[arg(long, conflicts_with = "no_masking")]
+        mask: bool,
+        /// Never mask secrets in the output
+        #[arg(long)]
+        no_masking: bool,
         /// Command and arguments
         #[arg(trailing_var_arg = true, required = true)]
         cmd: Vec<String>,
     },
 
-    /// Output shell export statements for resolved references
+    /// Output shell export statements for resolved references and environment items
+    /// (for direnv: `eval "$(vlt env --env envs/myapp)"` in .envrc)
     Env {
         #[arg(long = "env-file")]
         env_files: Vec<PathBuf>,
+        #[arg(long = "env")]
+        env_items: Vec<String>,
     },
+
+    /// Print a shell completion script (e.g. `vlt completions zsh > ~/.zfunc/_vlt`)
+    Completions { shell: clap_complete::Shell },
 
     /// Export all items to a passphrase-encrypted portable backup (.vltx)
     Export { output: PathBuf },
@@ -258,6 +285,46 @@ fn print_item(key: &str, item: &Item, reveal: bool) {
     }
 }
 
+/// `vlt show --json`。伏せる種類の値は --reveal が無ければ null、ファイルは大きさだけ。
+fn item_json(key: &str, item: &Item, reveal: bool) -> String {
+    let primary = item.item_type.primary_field();
+    let fields: Vec<serde_json::Value> = item
+        .fields
+        .iter()
+        .map(|f| {
+            let value = match f.kind {
+                FieldKind::File => serde_json::Value::Null,
+                kind if kind.is_secret() && !reveal => serde_json::Value::Null,
+                _ => serde_json::Value::String(f.value.clone()),
+            };
+            let reference = if primary == Some(f.id.as_str()) {
+                reference::build(key, None)
+            } else {
+                reference::build(key, Some(&f.id))
+            };
+            serde_json::json!({
+                "id": f.id,
+                "label": f.label,
+                "kind": f.kind,
+                "value": value,
+                "concealed": f.kind.is_secret(),
+                "filename": f.filename,
+                "size": (f.kind == FieldKind::File).then(|| f.file_bytes().map(|b| b.len()).unwrap_or(0)),
+                "reference": reference,
+            })
+        })
+        .collect();
+    serde_json::to_string_pretty(&serde_json::json!({
+        "key": key,
+        "type": item.item_type.as_str(),
+        "fields": fields,
+        "notes": item.notes,
+        "tags": item.tags,
+        "favorite": item.favorite,
+    }))
+    .expect("JSON 化は失敗しない")
+}
+
 fn main() {
     // Rust は SIGPIPE を無視するので、`vlt list | head` でパイプが閉じると
     // println! がパニックする。普通の CLI と同じく静かに終わらせる。
@@ -315,6 +382,9 @@ fn main() {
                     } else {
                         Item::new(new_type.unwrap_or(ItemType::Password))
                     };
+                    if item.item_type == ItemType::Environment && !envname::is_env_name(&name) {
+                        die(format!("{name} is not a valid environment variable name"));
+                    }
                     if name == NOTES_FIELD && item.field(&name).is_none() {
                         item.notes = secret_value;
                     } else if let Some(f) = item.field_mut(&name) {
@@ -367,10 +437,17 @@ fn main() {
             }
         }
 
-        Commands::Read { reference: r, no_newline } => {
+        Commands::Read { reference: r, no_newline, out } => {
+            if !reference::is_reference(&r) {
+                die(format!("not a secret reference (must start with {}): {r}", reference::PREFIX));
+            }
             let store = load_store();
-            let value = reference::resolve(&store, &reference::parse(&r).or_die()).or_die();
-            if no_newline {
+            let value = reference::resolve_value(&store, &r).or_die();
+            if let Some(path) = out {
+                write_private_file(&path, value.as_bytes())
+                    .unwrap_or_else(|e| die(format!("writing {}: {e}", path.display())));
+                eprintln!("Wrote {}", path.display());
+            } else if no_newline {
                 print!("{value}");
             } else {
                 println!("{value}");
@@ -399,9 +476,14 @@ fn main() {
             }
         }
 
-        Commands::Show { key, reveal } => {
+        Commands::Show { key, reveal, json } => {
             let store = load_store();
-            print_item(&key, &store.get_item(&key).or_die(), reveal);
+            let item = store.get_item(&key).or_die();
+            if json {
+                println!("{}", item_json(&key, &item, reveal));
+            } else {
+                print_item(&key, &item, reveal);
+            }
         }
 
         Commands::Totp { key } => {
@@ -481,9 +563,23 @@ fn main() {
             println!("\nItems are purged {} days after deletion.", vlt::store::TRASH_RETENTION_DAYS);
         }
 
-        Commands::List => {
+        Commands::List { json } => {
             let store = load_store();
             let items = store.list_items().or_die();
+            if json {
+                let rows: Vec<serde_json::Value> = items
+                    .iter()
+                    .map(|i| serde_json::json!({
+                        "key": i.key,
+                        "type": i.item_type.as_str(),
+                        "reference": reference::build(&i.key, None),
+                        "created_at": i.created_at,
+                        "updated_at": i.updated_at,
+                    }))
+                    .collect();
+                println!("{}", serde_json::to_string_pretty(&rows).or_die());
+                return;
+            }
             if items.is_empty() {
                 println!("No secrets stored. Use `vlt set <key> <value>` to add one.");
                 return;
@@ -501,31 +597,49 @@ fn main() {
             }
         }
 
-        Commands::Run { env_files, cmd } => {
+        Commands::Run { env_files, env_items, mask, no_masking, cmd } => {
             let store = load_store();
-            let vars = collect_env(&env_files);
-            let resolved = reference::resolve_env(&store, vars.clone()).or_die();
+            let vars = reference::build_env(&store, collect_env(&env_files), &env_items).or_die();
             drop(store);
+            let env: Vec<(String, String)> = vars.iter().map(|v| (v.name.clone(), v.value.clone())).collect();
+            let secrets: Vec<String> = vars.iter().filter(|v| v.secret).map(|v| v.value.clone()).collect();
+            let force = if mask { Some(true) } else if no_masking { Some(false) } else { None };
+            let streams = runner::mask_streams(force, runner::is_tty(1), runner::is_tty(2));
+            let has_secrets = secrets.iter().any(|s| s.len() >= vlt::mask::MIN_MASK_LEN);
 
-            let mut command = Command::new(&cmd[0]);
-            command.args(&cmd[1..]);
-            for (name, value) in &vars {
-                command.env(name, resolved.get(name).unwrap_or(value));
+            if !has_secrets || (!streams.stdout && !streams.stderr) {
+                // 伏せる物が無ければ exec で置き換わる（端末・シグナルとも素のまま）
+                let mut command = Command::new(&cmd[0]);
+                command.args(&cmd[1..]).env_clear().envs(env);
+                let err = command.exec();
+                die(format!("Failed to exec {}: {err}", cmd[0]));
             }
-            // exec replaces the current process (Unix only)
-            let err = command.exec();
-            die(format!("Failed to exec {}: {err}", cmd[0]));
+            let code = runner::run_masked(
+                &cmd,
+                &env,
+                &secrets,
+                streams,
+                Box::new(std::io::stdout()),
+                Box::new(std::io::stderr()),
+            )
+            .or_die();
+            std::process::exit(code);
         }
 
-        Commands::Env { env_files } => {
+        Commands::Env { env_files, env_items } => {
             let store = load_store();
-            let resolved = reference::resolve_env(&store, collect_env(&env_files)).or_die();
-            let mut names: Vec<_> = resolved.keys().collect();
-            names.sort();
-            for name in names {
-                let escaped = resolved[name].replace('\'', "'\\''");
-                println!("export {name}='{escaped}'");
+            let vars = reference::build_env(&store, collect_env(&env_files), &env_items).or_die();
+            let mut exported: Vec<_> = vars.into_iter().filter(|v| v.from_vlt).collect();
+            exported.sort_by(|a, b| a.name.cmp(&b.name));
+            for v in exported {
+                let escaped = v.value.replace('\'', "'\\''");
+                println!("export {}='{escaped}'", v.name);
             }
+        }
+
+        Commands::Completions { shell } => {
+            use clap::CommandFactory;
+            clap_complete::generate(shell, &mut Cli::command(), "vlt", &mut std::io::stdout());
         }
 
         Commands::Export { output } => {
