@@ -6,6 +6,8 @@ Lightweight secret manager for AI developers.
 
 Stop scattering API keys across `.env` files. `vlt` stores secrets in an encrypted local vault and resolves `vlt://` references at runtime — nothing sensitive touches disk or git history.
 
+![vlt demo: the secret is injected at run time and masked in piped output](docs/demo.gif)
+
 ## Features
 
 - **AES-256-GCM** encrypted local vault (SQLite)

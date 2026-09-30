@@ -4,6 +4,8 @@ AI開発者のための軽量シークレットマネージャー。
 
 APIキーを `.env` ファイルにばらまくのはやめましょう。`vlt` はシークレットを暗号化されたローカルvaultに保存し、`vlt://` 参照を実行時に解決します。機密情報がディスクやgit履歴に残ることはありません。
 
+![vlt demo: the secret is injected at run time and masked in piped output](docs/demo.gif)
+
 ## 特徴
 
 - **AES-256-GCM** 暗号化ローカルvault（SQLite）
